@@ -1,3 +1,5 @@
+use std::fmt;
+
 const ZERO_FLAG_BYTE_POSITION: u8 = 7;
 const SUBTRACT_FLAG_BYTE_POSITION: u8 = 6;
 const HALF_CARRY_FLAG_BYTE_POSITION: u8 = 5;
@@ -6,10 +8,17 @@ const CARRY_FLAG_BYTE_POSITION: u8 = 4;
 #[derive(Copy, Clone)]
 pub struct FlagsRegister {
     // f register
-    zero: bool,
-    subtract: bool,
-    half_carry: bool,
-    carry: bool,
+    pub zero: bool,
+    pub subtract: bool,
+    pub half_carry: bool,
+    pub carry: bool,
+}
+
+pub enum Flag {
+    Z,
+    C,
+    H,
+    N,
 }
 
 impl FlagsRegister {
@@ -20,6 +29,30 @@ impl FlagsRegister {
             half_carry: false,
             carry: false,
         }
+    }
+
+    pub fn set(&mut self, z: bool, s: bool, h: bool, c: bool) {
+        self.zero = z;
+        self.subtract = s;
+        self.half_carry = h;
+        self.carry = c;
+    }
+
+    pub fn flag(&mut self, flag: Flag, value: bool) {
+        match flag {
+            super::Flag::Z => self.zero = value,
+            super::Flag::C => self.subtract = value,
+            super::Flag::H => self.half_carry = value,
+            super::Flag::N => self.carry = value,
+        }
+    }
+}
+
+impl std::fmt::UpperHex for FlagsRegister {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let val = u8::from(*self);
+
+        fmt::UpperHex::fmt(&val, f) // delegate to i32's implementation
     }
 }
 

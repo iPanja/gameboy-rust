@@ -1,6 +1,6 @@
 pub enum Instruction {
-    r8,
-    r16,
+    r8,  // Any of the 8-bit registers
+    r16, // Any of the 16-bit registers (two 8-bit registers combined)
     r16stk,
     r16mem,
     cond,

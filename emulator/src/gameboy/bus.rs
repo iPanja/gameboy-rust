@@ -17,6 +17,14 @@ impl Bus {
         self.ram.write_byte(address, byte);
     }
 
+    pub fn ram_read_word(&self, address: u16) -> u16 {
+        self.ram.read_word(address)
+    }
+
+    pub fn ram_write_word(&mut self, address: u16, word: u16) {
+        self.ram.write_word(address, word);
+    }
+
     pub fn ram_load_rom(&mut self, buffer: &Vec<u8>) {
         for i in 0..buffer.len() {
             self.ram_write_byte((Memory::START_ADDR + i) as u16, buffer[i]);
