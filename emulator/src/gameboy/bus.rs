@@ -1,7 +1,7 @@
 use super::Memory;
 
 pub struct Bus {
-    ram: Memory,
+    pub ram: Memory,
 }
 
 impl Bus {
@@ -25,9 +25,9 @@ impl Bus {
         self.ram.write_word(address, word);
     }
 
-    pub fn ram_load_rom(&mut self, buffer: &Vec<u8>) {
+    pub fn ram_load_rom(&mut self, buffer: &Vec<u8>, addr: usize) {
         for i in 0..buffer.len() {
-            self.ram_write_byte((Memory::START_ADDR + i) as u16, buffer[i]);
+            self.ram_write_byte((Memory::START_ADDR + i + addr) as u16, buffer[i]);
         }
     }
 }

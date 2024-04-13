@@ -18,6 +18,10 @@ impl GameBoy {
     }
 
     pub fn read_rom(&mut self, buffer: &Vec<u8>) {
-        self.bus.ram_load_rom(buffer);
+        self.bus.ram_load_rom(buffer, 0x0);
+    }
+
+    pub fn read_rom_at(&mut self, buffer: &Vec<u8>, addr: usize) {
+        self.bus.ram_load_rom(buffer, addr);
     }
 }
