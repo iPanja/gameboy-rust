@@ -1,14 +1,14 @@
-use super::register;
 use super::Bus;
 use super::Flag;
 use super::Registers;
 
-const IS_DEBUGGING: bool = false;
+// const IS_DEBUGGING: bool = false;
 
 pub struct CPU {
     registers: Registers,
 }
 
+#[allow(unreachable_patterns)] // Some opcodes may fall under two categories, but either one will lead to the same result state
 impl CPU {
     pub fn new() -> Self {
         CPU {
@@ -26,7 +26,8 @@ impl CPU {
             //
             // 8-Bit Loads
             //
-            /// LD nn, n
+            // LD nn, n
+            // A
             0xCB => self.step_cb(bus),
             0x06 => {
                 self.registers.b = self.read_byte(bus);
@@ -52,8 +53,7 @@ impl CPU {
                 self.registers.l = self.read_byte(bus);
                 8
             }
-            /// LD r1, r2
-            //// A
+            // LD r1, r2
             0x7F => {
                 self.registers.a = self.registers.a;
                 4
@@ -86,7 +86,7 @@ impl CPU {
                 self.registers.a = self.read_ram_at_hl(bus);
                 8
             }
-            //// B
+            // B
             0x40 => {
                 self.registers.b = self.registers.b;
                 4
@@ -115,7 +115,7 @@ impl CPU {
                 self.registers.b = self.read_ram_at_hl(bus);
                 8
             }
-            //// C
+            // C
             0x48 => {
                 self.registers.c = self.registers.b;
                 4
@@ -144,7 +144,7 @@ impl CPU {
                 self.registers.c = self.read_ram_at_hl(bus);
                 8
             }
-            //// D
+            // D
             0x50 => {
                 self.registers.d = self.registers.b;
                 4
@@ -173,7 +173,7 @@ impl CPU {
                 self.registers.d = self.read_ram_at_hl(bus);
                 8
             }
-            //// E
+            // E
             0x58 => {
                 self.registers.e = self.registers.b;
                 4
@@ -202,7 +202,7 @@ impl CPU {
                 self.registers.e = self.read_ram_at_hl(bus);
                 8
             }
-            //// H
+            // H
             0x60 => {
                 self.registers.h = self.registers.b;
                 4
@@ -231,7 +231,7 @@ impl CPU {
                 self.registers.h = self.read_ram_at_hl(bus);
                 8
             }
-            //// L
+            // L
             0x68 => {
                 self.registers.l = self.registers.b;
                 4
@@ -260,7 +260,7 @@ impl CPU {
                 self.registers.l = self.read_ram_at_hl(bus);
                 8
             }
-            //// (HL)
+            // (HL)
             0x70 => {
                 self.write_ram_at_hl(bus, self.registers.b);
                 8
@@ -290,7 +290,7 @@ impl CPU {
                 self.write_ram_at_hl(bus, byte);
                 12
             }
-            /// LD A, n
+            // LD A, n
             0x7F => {
                 self.registers.a = self.registers.a;
                 4
@@ -339,7 +339,7 @@ impl CPU {
                 self.registers.a = self.read_byte(bus);
                 8
             }
-            /// LD n, A
+            // LD n, A
             0x7F => {
                 self.registers.a = self.registers.a;
                 4
@@ -384,49 +384,49 @@ impl CPU {
                 bus.ram_write_byte(self.read_word(bus), self.registers.a);
                 16
             }
-            /// LD A, (C)
+            // LD A, (C)
             0xF2 => {
                 let addr = 0xFF00 | (self.registers.c as u16);
                 let byte = bus.ram_read_byte(addr);
                 self.registers.a = byte;
                 8
             }
-            /// LD (C), A
+            // LD (C), A
             0xE2 => {
                 let addr = 0xFF00 | (self.registers.c as u16);
                 bus.ram_write_byte(addr, self.registers.a);
                 8
             }
-            /// LD A, (HLD) ; LD A, (HL-) ; LDD A, (HL) - 0x3A
+            // LD A, (HLD) ; LD A, (HL-) ; LDD A, (HL) - 0x3A
             0x3A => {
                 let byte = bus.ram_read_byte(self.registers.hld());
                 self.registers.a = byte;
                 8
             }
-            /// LD (HLD), A ; LD (HL-), A ; LDD (HL), A - 0x32
+            // LD (HLD), A ; LD (HL-), A ; LDD (HL), A - 0x32
             0x32 => {
                 let byte = self.registers.a;
                 bus.ram_write_byte(self.registers.hld(), byte);
                 8
             }
-            /// LD A, (HLI) ; LD A, (HL+) ; LDI A, (HL) - 0x2A
+            // LD A, (HLI) ; LD A, (HL+) ; LDI A, (HL) - 0x2A
             0x2A => {
                 let byte = bus.ram_read_byte(self.registers.hli());
                 self.registers.a = byte;
                 8
             }
-            /// LD (HLI), A ; LD (HL+), A ; LDI (HL), A - 0x22
+            // LD (HLI), A ; LD (HL+), A ; LDI (HL), A - 0x22
             0x22 => {
                 let byte = self.registers.a;
                 bus.ram_write_byte(self.registers.hli(), byte);
                 8
             }
-            /// LDH (n), A - 0xE0
+            // LDH (n), A - 0xE0
             0xE0 => {
                 bus.ram_write_byte(0xFF00 | (self.read_byte(bus) as u16), self.registers.a);
                 12
             }
-            /// LDH A, (n)
+            // LDH A, (n)
             0xF0 => {
                 self.registers.a = bus.ram_read_byte(0xFF00 | (self.read_byte(bus) as u16));
                 12
@@ -434,7 +434,7 @@ impl CPU {
             //
             // 16-Bit Loads
             //
-            /// LD n, nn
+            // LD n, nn
             0x01 => {
                 let word = self.read_word(bus);
                 self.registers.set_bc(word);
@@ -454,25 +454,25 @@ impl CPU {
                 self.registers.sp = self.read_word(bus);
                 12
             }
-            /// LD SP, HL
+            // LD SP, HL
             0xF9 => {
                 self.registers.sp = self.registers.get_hl();
                 8
             }
-            /// LD HL, SP+n
-            /// LDHL SP, n
+            // LD HL, SP+n
+            // LDHL SP, n
             0xF8 => {
                 let sum = self.registers.sp + (self.read_byte(bus) as u16);
                 self.registers.set_hl(sum);
                 12
             }
-            /// LD (nn), SP - 0x08
+            // LD (nn), SP - 0x08
             0x08 => {
                 let addr = self.read_word(bus);
                 bus.ram_write_word(addr, self.registers.sp);
                 20
             }
-            /// PUSH nn
+            // PUSH nn
             0xF5 => {
                 self.stack_push(bus, self.registers.get_af());
                 16
@@ -489,7 +489,7 @@ impl CPU {
                 self.stack_push(bus, self.registers.get_hl());
                 16
             }
-            /// POP nn
+            // POP nn
             0xF1 => {
                 let word = self.read_word(bus);
                 self.registers.set_af(word);
@@ -513,7 +513,7 @@ impl CPU {
             //
             //  8-Bit ALU
             //
-            /// ADD A, n
+            // ADD A, n
             0x87 => {
                 self.alu_add(self.registers.a, false);
                 4
@@ -551,7 +551,7 @@ impl CPU {
                 self.alu_add(byte, false);
                 8
             }
-            /// ADC A, n
+            // ADC A, n
             0x8F => {
                 self.alu_add(self.registers.a, true);
                 4
@@ -589,7 +589,7 @@ impl CPU {
                 self.alu_add(byte, true);
                 8
             }
-            /// SUB n
+            // SUB n
             0x97 => {
                 self.alu_sub(self.registers.a, false);
                 4
@@ -627,7 +627,7 @@ impl CPU {
                 self.alu_sub(byte, false);
                 8
             }
-            /// SBC A, n
+            // SBC A, n
             0x9F => {
                 self.alu_sub(self.registers.a, true);
                 4
@@ -661,7 +661,7 @@ impl CPU {
                 8
             }
             //0x?? => {self.alu_sub(self.read_byte(bus), true);}
-            /// AND n
+            // AND n
             0xA7 => {
                 self.alu_and(self.registers.a);
                 4
@@ -699,7 +699,7 @@ impl CPU {
                 self.alu_and(byte);
                 8
             }
-            /// OR n
+            // OR n
             0xB7 => {
                 self.alu_or(self.registers.a);
                 4
@@ -737,7 +737,7 @@ impl CPU {
                 self.alu_or(byte);
                 8
             }
-            /// XOR n
+            // XOR n
             0xAF => {
                 self.alu_xor(self.registers.a);
                 4
@@ -775,7 +775,7 @@ impl CPU {
                 self.alu_xor(byte);
                 8
             }
-            /// CP n
+            // CP n
             0xBF => {
                 self.alu_cp(self.registers.a);
                 4
@@ -813,7 +813,7 @@ impl CPU {
                 self.alu_cp(byte);
                 8
             }
-            /// INC n
+            // INC n
             0x3C => {
                 self.registers.a = self.inc(self.registers.a);
                 4
@@ -848,7 +848,7 @@ impl CPU {
                 self.write_ram_at_hl(bus, result);
                 12
             }
-            /// DEC n
+            // DEC n
             0x3D => {
                 self.registers.a = self.dec(self.registers.a);
                 4
@@ -886,7 +886,7 @@ impl CPU {
             //
             // 16-Bit Arithmetic
             //
-            /// ADD HL, n
+            // ADD HL, n
             0x09 => {
                 let word = self.registers.get_bc();
                 self.alu_add_16(word);
@@ -906,13 +906,13 @@ impl CPU {
                 self.alu_add_16(self.registers.sp);
                 8
             }
-            /// ADD SP, n
+            // ADD SP, n
             0xE8 => {
                 let byte = self.read_byte(bus);
                 self.registers.sp = self.alu_add_16_imm(self.registers.sp, byte);
                 16
             }
-            /// INC nn
+            // INC nn
             0x03 => {
                 self.registers
                     .set_bc(self.registers.get_bc().wrapping_add(1));
@@ -932,7 +932,7 @@ impl CPU {
                 self.registers.sp = self.registers.sp.wrapping_add(1);
                 8
             }
-            /// DEC nn
+            // DEC nn
             0x0B => {
                 self.registers
                     .set_bc(self.registers.get_bc().wrapping_add(1));
@@ -964,22 +964,22 @@ impl CPU {
             //
             // Shifts & Rotations
             //
-            /// RLCA
+            // RLCA
             0x07 => {
                 self.registers.a = self.rotate_circular(self.registers.a, true);
                 4
             }
-            /// RLA
+            // RLA
             0x17 => {
                 self.registers.a = self.rotate(self.registers.a, true);
                 4
             }
-            /// RRCA
+            // RRCA
             0x0F => {
                 self.registers.a = self.rotate_circular(self.registers.a, false);
                 4
             }
-            /// RRA
+            // RRA
             0x1F => {
                 self.registers.a = self.rotate(self.registers.a, false);
                 4
@@ -987,13 +987,13 @@ impl CPU {
             //
             // Jumps
             //
-            /// JP nn
+            // JP nn
             0xC3 => {
                 let addr = self.read_word(bus);
                 self.jump_to(addr);
                 12
             }
-            /// JP cc, nn
+            // JP cc, nn
             0xC2 => {
                 let addr = self.read_word(bus);
                 if !self.registers.f.zero {
@@ -1022,18 +1022,18 @@ impl CPU {
                 }
                 12
             }
-            /// JP (HL)
+            // JP (HL)
             0xE9 => {
                 self.jump_to(self.registers.get_hl());
                 4
             }
-            /// JR n
+            // JR n
             0x18 => {
                 let offset = self.read_byte(bus) as i8;
                 self.jump_relative(offset);
                 8
             }
-            /// JR cc, n
+            // JR cc, n
             0x20 => {
                 let offset = self.read_byte(bus) as i8;
                 if !self.registers.f.zero {
@@ -1065,13 +1065,13 @@ impl CPU {
             //
             // Calls
             //
-            /// CALL nn
+            // CALL nn
             0xCD => {
                 let addr = self.read_word(bus);
                 self.call(bus, addr);
                 12
             }
-            /// CALL cc, nn
+            // CALL cc, nn
             0xC4 => {
                 let addr = self.read_word(bus);
                 if !self.registers.f.zero {
@@ -1103,7 +1103,7 @@ impl CPU {
             //
             // Restarts
             //
-            /// RST n
+            // RST n
             0xC7 => {
                 self.call(bus, 0x00);
                 16
@@ -1139,12 +1139,12 @@ impl CPU {
             //
             // Returns
             //
-            /// RET
+            // RET
             0xC9 => {
                 self.ret(bus);
                 8
             }
-            /// RET cc
+            // RET cc
             0xC0 => {
                 if !self.registers.f.zero {
                     self.ret(bus);
@@ -1169,7 +1169,7 @@ impl CPU {
                 }
                 8
             }
-            /// RETI
+            // RETI
             0xD9 => {
                 self.ret(bus);
                 // TODO: ENABLE INTERRUPTS
@@ -1205,7 +1205,7 @@ impl CPU {
 
         let cycles: i16 = match opcode {
             // MISC
-            /// SWAP n
+            // SWAP n
             0x37 => {
                 self.registers.a = self.swap(self.registers.a);
                 8
@@ -1243,7 +1243,7 @@ impl CPU {
             //
             // Shifts & Rotations
             //
-            /// RLC n
+            // RLC n
             0x07 => {
                 self.registers.a = self.rotate_circular(self.registers.a, true);
                 8
@@ -1278,7 +1278,7 @@ impl CPU {
                 self.write_ram_at_hl(bus, result);
                 16
             }
-            /// RL n
+            // RL n
             0x17 => {
                 self.registers.a = self.rotate(self.registers.a, true);
                 8
@@ -1313,7 +1313,7 @@ impl CPU {
                 self.write_ram_at_hl(bus, result);
                 16
             }
-            /// RRC n
+            // RRC n
             0x0F => {
                 self.registers.a = self.rotate_circular(self.registers.a, false);
                 8
@@ -1348,7 +1348,7 @@ impl CPU {
                 self.write_ram_at_hl(bus, result);
                 16
             }
-            /// RR n
+            // RR n
             0x1F => {
                 self.registers.a = self.rotate(self.registers.a, false);
                 8
@@ -1383,7 +1383,7 @@ impl CPU {
                 self.write_ram_at_hl(bus, result);
                 16
             }
-            /// SLA n
+            // SLA n
             0x27 => {
                 self.registers.a = self.shift(self.registers.a, true, false);
                 8
@@ -1418,7 +1418,7 @@ impl CPU {
                 self.write_ram_at_hl(bus, result);
                 16
             }
-            /// SRA n
+            // SRA n
             0x2F => {
                 self.registers.a = self.shift(self.registers.a, false, true);
                 8
@@ -1453,7 +1453,7 @@ impl CPU {
                 self.write_ram_at_hl(bus, result);
                 16
             }
-            /// SRL n
+            // SRL n
             0x3F => {
                 self.registers.a = self.shift(self.registers.a, false, false);
                 8
@@ -1488,7 +1488,7 @@ impl CPU {
                 self.write_ram_at_hl(bus, result);
                 16
             }
-            /// BIT b, r
+            // BIT b, r
             0x40 => {
                 self.test_bit(self.registers.b, 0);
                 8
@@ -1553,7 +1553,7 @@ impl CPU {
                 self.test_bit(self.registers.a, 1);
                 8
             }
-            ///
+            //
             0x50 => {
                 self.test_bit(self.registers.b, 2);
                 8
@@ -1618,7 +1618,7 @@ impl CPU {
                 self.test_bit(self.registers.a, 3);
                 8
             }
-            ///
+            //
             0x60 => {
                 self.test_bit(self.registers.b, 4);
                 8
@@ -1683,7 +1683,7 @@ impl CPU {
                 self.test_bit(self.registers.a, 5);
                 8
             }
-            ///
+            //
             0x70 => {
                 self.test_bit(self.registers.b, 6);
                 8
@@ -1748,7 +1748,7 @@ impl CPU {
                 self.test_bit(self.registers.a, 7);
                 8
             }
-            /// SET b, r
+            // SET b, r
             0xC0 => {
                 self.registers.b = self.set_bit(self.registers.b, 0);
                 8
@@ -1815,7 +1815,7 @@ impl CPU {
                 self.registers.a = self.set_bit(self.registers.a, 1);
                 8
             }
-            ///
+            //
             0xD0 => {
                 self.registers.b = self.set_bit(self.registers.b, 2);
                 8
@@ -1882,7 +1882,7 @@ impl CPU {
                 self.registers.a = self.set_bit(self.registers.a, 3);
                 8
             }
-            ///
+            //
             0xE0 => {
                 self.registers.b = self.set_bit(self.registers.b, 4);
                 8
@@ -1949,7 +1949,7 @@ impl CPU {
                 self.registers.a = self.set_bit(self.registers.a, 5);
                 8
             }
-            ///
+            //
             0xF0 => {
                 self.registers.b = self.set_bit(self.registers.b, 6);
                 8
@@ -2016,7 +2016,7 @@ impl CPU {
                 self.registers.a = self.set_bit(self.registers.a, 7);
                 8
             }
-            /// RES b, r
+            // RES b, r
             0x80 => {
                 self.registers.b = self.reset_bit(self.registers.b, 0);
                 8
@@ -2083,7 +2083,7 @@ impl CPU {
                 self.registers.a = self.reset_bit(self.registers.a, 1);
                 8
             }
-            ///
+            //
             0x90 => {
                 self.registers.b = self.reset_bit(self.registers.b, 2);
                 8
@@ -2150,7 +2150,7 @@ impl CPU {
                 self.registers.a = self.reset_bit(self.registers.a, 3);
                 8
             }
-            ///
+            //
             0xA0 => {
                 self.registers.b = self.reset_bit(self.registers.b, 4);
                 8
@@ -2217,7 +2217,7 @@ impl CPU {
                 self.registers.a = self.reset_bit(self.registers.a, 5);
                 8
             }
-            ///
+            //
             0xB0 => {
                 self.registers.b = self.reset_bit(self.registers.b, 6);
                 8
@@ -2328,7 +2328,7 @@ impl CPU {
     }
 
     // ALU
-    /// ALU 8-Bit
+    // ALU 8-Bit
     fn alu_add(&mut self, b: u8, carry: bool) {
         let c = if carry && self.registers.f.carry {
             1
@@ -2357,7 +2357,7 @@ impl CPU {
             0
         };
         let a = self.registers.a;
-        let result = a.wrapping_sub((b.wrapping_add(c)));
+        let result = a.wrapping_sub(b.wrapping_add(c));
 
         self.registers.f.flag(Flag::Z, result == 0);
         self.registers.f.flag(Flag::N, true);
@@ -2428,7 +2428,7 @@ impl CPU {
 
         result
     }
-    /// ALU 16-Bit
+    // ALU 16-Bit
     fn alu_add_16_imm(&mut self, a: u16, b: u8) -> u16 {
         let result = a.wrapping_add(b as u16);
 
@@ -2560,9 +2560,6 @@ impl CPU {
         self.stack_push(bus, self.registers.pc);
         self.jump_to(word);
     }
-
-    // Restarts
-    fn rst(&mut self, word: u16) {}
 
     // Returns
     fn ret(&mut self, bus: &mut Bus) {

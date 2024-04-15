@@ -101,18 +101,4 @@ impl Registers {
 
         value
     }
-
-    pub fn dump(&self) {
-        println!(
-            "
-            a: {:#X}\t f: {:#X}
-            b: {:#X}\t c: {:#X}
-            d: {:#X}\t e: {:#X}
-            h: {:#X}\t l: {:#X}\n
-            pc: {:#X}
-            sp: {:#X}
-        ",
-            self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.pc, self.sp
-        );
-    }
 }
