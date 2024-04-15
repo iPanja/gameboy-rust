@@ -4,6 +4,7 @@ pub mod flags_register;
 pub mod gameboy;
 pub mod instruction;
 pub mod memory;
+pub mod ppu;
 pub mod register;
 
 pub use bus::Bus;
@@ -13,4 +14,5 @@ pub use flags_register::FlagsRegister;
 pub use gameboy::GameBoy;
 pub use instruction::Instruction;
 pub use memory::Memory;
+pub use ppu::PPU;
 pub use register::Registers;

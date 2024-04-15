@@ -16,12 +16,12 @@ impl CPU {
         }
     }
 
-    pub fn step(&mut self, bus: &mut Bus) {
+    pub fn step(&mut self, bus: &mut Bus) -> i16 {
         let opcode = bus.ram_read_byte(self.registers.pc);
         //println!("instruction {:#X}: {:#X}", self.registers.pc, opcode);
         self.registers.pc += 1;
 
-        let cycles = match opcode {
+        let cycles: i16 = match opcode {
             // FORMAT 0x00 => { statement ; clock_cycles }
             //
             // 8-Bit Loads
@@ -1185,20 +1185,25 @@ impl CPU {
             }
         };
         //println!("Cycles: {}", cycles);
-        if self.registers.pc == 0x64 {
+        if self.registers.pc == 0x68 {
             println!("Waiting for LCD implementation!");
+            println!("{:?}", self.registers);
+            println!("$FF40 - LCDC : {:b}", bus.ram_read_byte(0xFF40));
+            panic!("a");
         }
         if self.registers.pc > 0x100 {
             println!("BOOT-ROM has exited!");
         }
+
+        cycles
     }
 
-    fn step_cb(&mut self, bus: &mut Bus) -> i32 {
+    fn step_cb(&mut self, bus: &mut Bus) -> i16 {
         let opcode = bus.ram_read_byte(self.registers.pc);
         //println!("CB instruction {:#X}: {:#X}", self.registers.pc, opcode);
         self.registers.pc += 1;
 
-        let cycles = match opcode {
+        let cycles: i16 = match opcode {
             // MISC
             /// SWAP n
             0x37 => {

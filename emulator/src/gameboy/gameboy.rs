@@ -14,7 +14,7 @@ impl GameBoy {
     }
 
     pub fn tick(&mut self) {
-        self.cpu.step(&mut self.bus);
+        let cycles = self.cpu.step(&mut self.bus);
     }
 
     pub fn read_rom(&mut self, buffer: &Vec<u8>) {
