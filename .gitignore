@@ -1,4 +1,4 @@
-target/
-target/*
+emulator/target/
+emulator/target/*
 roms/*
 src/gameboy/cpu.rs.old
