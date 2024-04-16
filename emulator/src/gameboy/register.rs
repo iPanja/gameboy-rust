@@ -35,16 +35,16 @@ impl fmt::Debug for Registers {
 impl Registers {
     pub fn new() -> Self {
         Registers {
-            a: 0,
-            b: 0,
-            d: 0,
-            h: 0,
-            f: FlagsRegister::new(),
-            c: 0,
-            e: 0,
-            l: 0,
-            pc: 0,
-            sp: 0xFFFF,
+            a: 0x01,
+            b: 0x00,
+            d: 0x00,
+            h: 0x01,
+            f: FlagsRegister::from(0xB0),
+            c: 0x13,
+            e: 0xD8,
+            l: 0x4D,
+            pc: 0x0100,
+            sp: 0xFFFE,
         }
     }
 

@@ -16,9 +16,9 @@ pub struct FlagsRegister {
 
 pub enum Flag {
     Z,
-    C,
-    H,
     N,
+    H,
+    C,
 }
 
 impl FlagsRegister {
@@ -41,9 +41,9 @@ impl FlagsRegister {
     pub fn flag(&mut self, flag: Flag, value: bool) {
         match flag {
             super::Flag::Z => self.zero = value,
-            super::Flag::C => self.subtract = value,
+            super::Flag::N => self.subtract = value,
             super::Flag::H => self.half_carry = value,
-            super::Flag::N => self.carry = value,
+            super::Flag::C => self.carry = value,
         }
     }
 }

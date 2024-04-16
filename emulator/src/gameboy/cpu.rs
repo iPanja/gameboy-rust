@@ -2,10 +2,15 @@ use super::Bus;
 use super::Flag;
 use super::Registers;
 
+use std::fs::OpenOptions;
+use std::io::prelude::*;
+
 // const IS_DEBUGGING: bool = false;
 
 pub struct CPU {
     registers: Registers,
+    is_halted: bool,
+    ime: bool,
 }
 
 #[allow(unreachable_patterns)] // Some opcodes may fall under two categories, but either one will lead to the same result state
@@ -13,10 +18,40 @@ impl CPU {
     pub fn new() -> Self {
         CPU {
             registers: Registers::new(),
+            is_halted: false,
+            ime: true,
         }
     }
 
+    pub fn tick(&mut self) {
+        self.update_ime();
+    }
+
+    fn update_ime(&mut self) {}
+
     pub fn step(&mut self, bus: &mut Bus) -> i16 {
+        if self.is_halted {
+            return 4;
+        }
+
+        log(format!(
+            "A:{} F:{} B:{} C:{} D:{} E:{} H:{} L:{} SP:{} PC:{} PCMEM:{},{},{},{}",
+            hex8(self.registers.a),
+            hex8(u8::from(self.registers.f)),
+            hex8(self.registers.b),
+            hex8(self.registers.c),
+            hex8(self.registers.d),
+            hex8(self.registers.e),
+            hex8(self.registers.h),
+            hex8(self.registers.l),
+            hex16(self.registers.sp),
+            hex16(self.registers.pc),
+            hex8(bus.ram_read_byte(self.registers.pc)),
+            hex8(bus.ram_read_byte(self.registers.pc + 1)),
+            hex8(bus.ram_read_byte(self.registers.pc + 2)),
+            hex8(bus.ram_read_byte(self.registers.pc + 3))
+        ));
+
         let opcode = bus.ram_read_byte(self.registers.pc);
         //println!("instruction {:#X}: {:#X}", self.registers.pc, opcode);
         self.registers.pc += 1;
@@ -491,22 +526,22 @@ impl CPU {
             }
             // POP nn
             0xF1 => {
-                let word = self.read_word(bus);
+                let word = self.stack_pop(bus);
                 self.registers.set_af(word);
                 12
             }
             0xC1 => {
-                let word = self.read_word(bus);
+                let word = self.stack_pop(bus);
                 self.registers.set_bc(word);
                 12
             }
             0xD1 => {
-                let word = self.read_word(bus);
+                let word = self.stack_pop(bus);
                 self.registers.set_de(word);
                 12
             }
             0xE1 => {
-                let word = self.read_word(bus);
+                let word = self.stack_pop(bus);
                 self.registers.set_hl(word);
                 12
             }
@@ -953,11 +988,34 @@ impl CPU {
                 8
             }
             // DAA
+            0x27 => {
+                self.daa();
+                4
+            }
             // CPL
+            0x2F => {
+                self.registers.a = !self.registers.a;
+                self.registers.f.flag(Flag::N, true);
+                self.registers.f.flag(Flag::H, true);
+                4
+            }
             // CCF
+            0x3F => {
+                self.ccf();
+                4
+            }
             // SCF
+            0x37 => {
+                self.scf();
+                4
+            }
+            // NOP
             0x00 => 4,
             // HALT
+            0x76 => {
+                self.is_halted = true;
+                4
+            }
             // STOP
             // DI
             // EI
@@ -977,11 +1035,13 @@ impl CPU {
             // RRCA
             0x0F => {
                 self.registers.a = self.rotate_circular(self.registers.a, false);
+                self.registers.f.flag(Flag::Z, false);
                 4
             }
             // RRA
             0x1F => {
                 self.registers.a = self.rotate(self.registers.a, false);
+                self.registers.f.flag(Flag::Z, false);
                 4
             }
             //
@@ -1171,9 +1231,21 @@ impl CPU {
             }
             // RETI
             0xD9 => {
-                self.ret(bus);
                 // TODO: ENABLE INTERRUPTS
+                bus.ram_write_byte(0xFFFF, 1);
+                self.ret(bus);
                 8
+            }
+            //
+            // Miscellaneous
+            //
+            // DI
+            0xF3 => {
+                4 // TODO
+            }
+            // EI
+            0xFB => {
+                4 // TODO
             }
             // NOT FOUND!
             _ => {
@@ -1185,14 +1257,17 @@ impl CPU {
             }
         };
         //println!("Cycles: {}", cycles);
-        if self.registers.pc == 0x68 {
-            println!("Waiting for LCD implementation!");
-            println!("{:?}", self.registers);
-            println!("$FF40 - LCDC : {:b}", bus.ram_read_byte(0xFF40));
-            panic!("a");
+        if self.registers.pc >= 0xE6 {
+            //println!("Waiting for LCD implementation!");
+            //println!("PC: {:#X}", self.registers.pc);
+            //println!("{:?}", self.registers);
+            //println!("$FF40 - LCDC : {:b}", bus.ram_read_byte(0xFF40));
+            //println!("$FF44 - LY : {:#X}", bus.ram_read_byte(0xFF44));
+            //panic!("a");
         }
+
         if self.registers.pc > 0x100 {
-            println!("BOOT-ROM has exited!");
+            // println!("BOOT-ROM has exited!");
         }
 
         cycles
@@ -2401,12 +2476,17 @@ impl CPU {
     fn alu_cp(&mut self, b: u8) {
         // Compare A with n
         let a = self.registers.a;
+        /*
         let result = a.wrapping_sub(b);
 
         self.registers.f.flag(Flag::Z, result == 0);
         self.registers.f.flag(Flag::N, true);
         self.registers.f.flag(Flag::H, (a & 0x7) > (b & 0x7));
         self.registers.f.flag(Flag::C, a < b);
+
+        */
+        self.alu_sub(b, false);
+        self.registers.a = a; // Restore value
 
         // Throwaway result
     }
@@ -2448,9 +2528,12 @@ impl CPU {
         let result = a.wrapping_add(b);
 
         self.registers.f.flag(Flag::N, false);
+        /*self.registers
+        .f
+        .flag(Flag::H, ((a & 0x7FF) as u32) + ((b & 0x7FF) as u32) > 0x7FF);*/
         self.registers
             .f
-            .flag(Flag::H, ((a & 0xFFF) as u32) + ((b & 0x7FF) as u32) > 0x7FF);
+            .flag(Flag::H, (a ^ b ^ result) & 0x1000 != 0);
         self.registers
             .f
             .flag(Flag::C, (a as u32) + (b as u32) > 0xFFFF);
@@ -2470,6 +2553,43 @@ impl CPU {
         self.registers.f.flag(Flag::C, false);
 
         result
+    }
+
+    fn daa(&mut self) {
+        // rboy
+        let mut a = self.registers.a;
+        let mut adjust = if self.registers.f.carry { 0x60 } else { 0x00 };
+        if self.registers.f.half_carry {
+            adjust |= 0x06;
+        };
+        if !self.registers.f.subtract {
+            if a & 0x0F > 0x09 {
+                adjust |= 0x06;
+            };
+            if a > 0x99 {
+                adjust |= 0x60;
+            };
+            a = a.wrapping_add(adjust);
+        } else {
+            a = a.wrapping_sub(adjust);
+        }
+
+        self.registers.f.flag(Flag::C, adjust >= 0x60);
+        self.registers.f.flag(Flag::H, false);
+        self.registers.f.flag(Flag::Z, a == 0);
+        self.registers.a = a;
+    }
+
+    fn ccf(&mut self) {
+        self.registers.f.flag(Flag::N, false);
+        self.registers.f.flag(Flag::H, false);
+        self.registers.f.flag(Flag::C, !self.registers.f.carry);
+    }
+
+    fn scf(&mut self) {
+        self.registers.f.flag(Flag::N, false);
+        self.registers.f.flag(Flag::N, false);
+        self.registers.f.flag(Flag::C, true);
     }
 
     // Rotates & Shifts
@@ -2565,5 +2685,36 @@ impl CPU {
     fn ret(&mut self, bus: &mut Bus) {
         let addr = self.stack_pop(bus);
         self.jump_to(addr);
+    }
+}
+
+fn log(s: String) {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(true)
+        .open("gb-log")
+        .unwrap();
+
+    if let Err(e) = writeln!(file, "{}", s) {
+        eprintln!("Couldn't write to file: {}", e);
+    }
+}
+
+fn hex8(a: u8) -> String {
+    let result = format!("{:X}", a).to_string();
+    if result.len() < 2 {
+        format!("0{}", result)
+    } else {
+        result
+    }
+}
+
+fn hex16(a: u16) -> String {
+    let result = format!("{:X}", a).to_string();
+    if result.len() < 4 {
+        format!("0{}", result)
+    } else {
+        result
     }
 }
