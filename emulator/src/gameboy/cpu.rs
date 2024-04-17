@@ -6,11 +6,14 @@ use std::fs::OpenOptions;
 use std::io::prelude::*;
 
 // const IS_DEBUGGING: bool = false;
+const IF_REG: u16 = 0xFF0F;
+const IE_REG: u16 = 0xFFFF;
 
 pub struct CPU {
     registers: Registers,
     is_halted: bool,
-    ime: bool,
+    interrupt_action: Option<bool>,
+    interrupts_enabled: bool,
 }
 
 #[allow(unreachable_patterns)] // Some opcodes may fall under two categories, but either one will lead to the same result state
@@ -19,20 +22,13 @@ impl CPU {
         CPU {
             registers: Registers::new(),
             is_halted: false,
-            ime: true,
+            interrupt_action: Option::None,
+            interrupts_enabled: false,
         }
     }
 
-    pub fn tick(&mut self) {
-        self.update_ime();
-    }
-
-    fn update_ime(&mut self) {}
-
-    pub fn step(&mut self, bus: &mut Bus) -> i16 {
-        if self.is_halted {
-            return 4;
-        }
+    pub fn log_state(&self, bus: &mut Bus) {
+        bus.debug();
 
         log(format!(
             "A:{} F:{} B:{} C:{} D:{} E:{} H:{} L:{} SP:{} PC:{} PCMEM:{},{},{},{}",
@@ -51,6 +47,82 @@ impl CPU {
             hex8(bus.ram_read_byte(self.registers.pc + 2)),
             hex8(bus.ram_read_byte(self.registers.pc + 3))
         ));
+    }
+
+    pub fn tick(&mut self, bus: &mut Bus) -> i16 {
+        // Handle pending interrupt action
+        self.interrupt_action = match self.interrupt_action {
+            Some(x) => {
+                self.interrupts_enabled = x;
+                None
+            }
+            None => None,
+        };
+
+        // HALT and HALT BUG
+        let is_interrupt_pending: bool = bus.ram_read_byte(IF_REG) & bus.ram_read_byte(IE_REG) != 0;
+
+        if self.is_halted && is_interrupt_pending{
+            self.is_halted = false;
+            if !self.interrupts_enabled {
+                // BUG
+                println!("halt bug!");
+                self.registers.pc -= 1;
+            }
+        }
+
+        if self.is_halted {
+            return 4;
+        }
+
+        // Handle interrupts or next step
+        self.log_state(bus);
+        let cycles: i16 = match self.handle_interrupt(bus) {
+            Some(x) => x as i16,
+            None => {
+                self.step(bus)
+            }
+        };
+
+        cycles
+    }
+
+    fn handle_interrupt(&mut self, bus: &mut Bus) -> Option<u8> {
+        if self.interrupts_enabled {
+            let ifr = bus.ram_read_byte(IF_REG);
+            let ier = bus.ram_read_byte(IE_REG);
+
+            let triggers = ifr & ier;
+            if triggers != 0 { // Some interrupt flag is enabled
+                self.interrupt_action = None;
+                self.interrupts_enabled = false; // Disable interrupt until this one is completed (changed upon completion, in RETI call)
+
+                // Handled in order of priority
+                if triggers & 0x1 == 0x1 { // V Blank
+                    self.call(bus, 0x40);
+                    bus.ram_write_byte(IF_REG, ifr & !0x1);
+                }else if triggers & 0x2 == 0x2 { // LCD Status Triggers
+                    self.call(bus, 0x48);
+                    bus.ram_write_byte(IF_REG, ifr & !0x2);
+                }else if triggers & 0x4 == 0x4{ // Timer Overflow
+                    self.call(bus, 0x50);
+                    bus.ram_write_byte(IF_REG, ifr & !0x4);
+                }else if triggers & 0x8 == 0x8 { // Serial Link
+                    self.call(bus, 0x58);
+                    bus.ram_write_byte(IF_REG, ifr & !0x8);
+                }else if triggers & 0x10 == 0x10{ // Joypad Press
+                    self.call(bus, 0x60);
+                    bus.ram_write_byte(IF_REG, ifr & !0x10);
+                };
+
+                return Some(5);
+            };
+        };
+
+        return None;
+    }
+
+    pub fn step(&mut self, bus: &mut Bus) -> i16 {
 
         let opcode = bus.ram_read_byte(self.registers.pc);
         //println!("instruction {:#X}: {:#X}", self.registers.pc, opcode);
@@ -458,12 +530,13 @@ impl CPU {
             }
             // LDH (n), A - 0xE0
             0xE0 => {
-                bus.ram_write_byte(0xFF00 | (self.read_byte(bus) as u16), self.registers.a);
+                let byte = self.read_byte(bus);
+                bus.ram_write_byte(0xFF00 | byte as u16, self.registers.a);
                 12
             }
             // LDH A, (n)
             0xF0 => {
-                self.registers.a = bus.ram_read_byte(0xFF00 | (self.read_byte(bus) as u16));
+                self.registers.a = bus.ram_read_byte(0xFF00 | self.read_byte(bus) as u16);
                 12
             }
             //
@@ -497,8 +570,9 @@ impl CPU {
             // LD HL, SP+n
             // LDHL SP, n
             0xF8 => {
-                let sum = self.registers.sp + (self.read_byte(bus) as u16);
-                self.registers.set_hl(sum);
+                let byte = self.read_byte(bus);
+                let result = self.alu_add_16_imm(self.registers.sp, byte);
+                self.registers.set_hl(result);
                 12
             }
             // LD (nn), SP - 0x08
@@ -695,7 +769,11 @@ impl CPU {
                 self.alu_sub(self.read_ram_at_hl(bus), true);
                 8
             }
-            //0x?? => {self.alu_sub(self.read_byte(bus), true);}
+            0xDE => {
+                let byte = self.read_byte(bus);
+                self.alu_sub(byte, true);
+                8 // 12?
+            }
             // AND n
             0xA7 => {
                 self.alu_and(self.registers.a);
@@ -970,21 +1048,21 @@ impl CPU {
             // DEC nn
             0x0B => {
                 self.registers
-                    .set_bc(self.registers.get_bc().wrapping_add(1));
+                    .set_bc(self.registers.get_bc().wrapping_sub(1));
                 8
             }
             0x1B => {
                 self.registers
-                    .set_de(self.registers.get_de().wrapping_add(1));
+                    .set_de(self.registers.get_de().wrapping_sub(1));
                 8
             }
             0x2B => {
                 self.registers
-                    .set_hl(self.registers.get_hl().wrapping_add(1));
+                    .set_hl(self.registers.get_hl().wrapping_sub(1));
                 8
             }
             0x3B => {
-                self.registers.sp = self.registers.sp.wrapping_add(1);
+                self.registers.sp = self.registers.sp.wrapping_sub(1);
                 8
             }
             // DAA
@@ -1013,6 +1091,7 @@ impl CPU {
             0x00 => 4,
             // HALT
             0x76 => {
+                println!("\nHALTED\n");
                 self.is_halted = true;
                 4
             }
@@ -1024,23 +1103,23 @@ impl CPU {
             //
             // RLCA
             0x07 => {
-                self.registers.a = self.rotate_circular(self.registers.a, true);
+                self.registers.a = self.rotate_circular(self.registers.a, true, false);
                 4
             }
             // RLA
             0x17 => {
-                self.registers.a = self.rotate(self.registers.a, true);
+                self.registers.a = self.rotate(self.registers.a, true, false);
                 4
             }
             // RRCA
             0x0F => {
-                self.registers.a = self.rotate_circular(self.registers.a, false);
+                self.registers.a = self.rotate_circular(self.registers.a, false, false);
                 self.registers.f.flag(Flag::Z, false);
                 4
             }
             // RRA
             0x1F => {
-                self.registers.a = self.rotate(self.registers.a, false);
+                self.registers.a = self.rotate(self.registers.a, false, false);
                 self.registers.f.flag(Flag::Z, false);
                 4
             }
@@ -1075,9 +1154,9 @@ impl CPU {
                 }
                 12
             }
-            0xCA => {
+            0xDA => {
                 let addr = self.read_word(bus);
-                if !self.registers.f.carry {
+                if self.registers.f.carry {
                     self.jump_to(addr);
                 }
                 12
@@ -1117,7 +1196,7 @@ impl CPU {
             }
             0x38 => {
                 let offset = self.read_byte(bus) as i8;
-                if !self.registers.f.carry {
+                if self.registers.f.carry {
                     self.jump_relative(offset);
                 }
                 8
@@ -1155,7 +1234,7 @@ impl CPU {
             }
             0xDC => {
                 let addr = self.read_word(bus);
-                if !self.registers.f.carry {
+                if self.registers.f.carry {
                     self.call(bus, addr);
                 }
                 12
@@ -1224,7 +1303,7 @@ impl CPU {
                 8
             }
             0xD8 => {
-                if !self.registers.f.carry {
+                if self.registers.f.carry {
                     self.ret(bus);
                 }
                 8
@@ -1232,7 +1311,8 @@ impl CPU {
             // RETI
             0xD9 => {
                 // TODO: ENABLE INTERRUPTS
-                bus.ram_write_byte(0xFFFF, 1);
+                // bus.ram_write_byte(0xFFFF, 1);
+                self.interrupt_action = Some(true);
                 self.ret(bus);
                 8
             }
@@ -1241,10 +1321,14 @@ impl CPU {
             //
             // DI
             0xF3 => {
+                //println!("interupts disabled");
+                self.interrupt_action = Some(false);
                 4 // TODO
             }
             // EI
             0xFB => {
+                //println!("interupts enabled!");
+                self.interrupt_action = Some(true);
                 4 // TODO
             }
             // NOT FOUND!
@@ -1320,141 +1404,141 @@ impl CPU {
             //
             // RLC n
             0x07 => {
-                self.registers.a = self.rotate_circular(self.registers.a, true);
+                self.registers.a = self.rotate_circular(self.registers.a, true, true);
                 8
             }
             0x00 => {
-                self.registers.b = self.rotate_circular(self.registers.b, true);
+                self.registers.b = self.rotate_circular(self.registers.b, true, true);
                 8
             }
             0x01 => {
-                self.registers.c = self.rotate_circular(self.registers.c, true);
+                self.registers.c = self.rotate_circular(self.registers.c, true, true);
                 8
             }
             0x02 => {
-                self.registers.d = self.rotate_circular(self.registers.d, true);
+                self.registers.d = self.rotate_circular(self.registers.d, true, true);
                 8
             }
             0x03 => {
-                self.registers.e = self.rotate_circular(self.registers.e, true);
+                self.registers.e = self.rotate_circular(self.registers.e, true, true);
                 8
             }
             0x04 => {
-                self.registers.h = self.rotate_circular(self.registers.h, true);
+                self.registers.h = self.rotate_circular(self.registers.h, true, true);
                 8
             }
             0x05 => {
-                self.registers.l = self.rotate_circular(self.registers.l, true);
+                self.registers.l = self.rotate_circular(self.registers.l, true, true);
                 8
             }
             0x06 => {
                 let byte = self.read_ram_at_hl(bus);
-                let result = self.rotate_circular(byte, true);
+                let result = self.rotate_circular(byte, true, true);
                 self.write_ram_at_hl(bus, result);
                 16
             }
             // RL n
             0x17 => {
-                self.registers.a = self.rotate(self.registers.a, true);
+                self.registers.a = self.rotate(self.registers.a, true, true);
                 8
             }
             0x10 => {
-                self.registers.b = self.rotate(self.registers.b, true);
+                self.registers.b = self.rotate(self.registers.b, true, true);
                 8
             }
             0x11 => {
-                self.registers.c = self.rotate(self.registers.c, true);
+                self.registers.c = self.rotate(self.registers.c, true, true);
                 8
             }
             0x12 => {
-                self.registers.d = self.rotate(self.registers.d, true);
+                self.registers.d = self.rotate(self.registers.d, true, true);
                 8
             }
             0x13 => {
-                self.registers.e = self.rotate(self.registers.e, true);
+                self.registers.e = self.rotate(self.registers.e, true, true);
                 8
             }
             0x14 => {
-                self.registers.h = self.rotate(self.registers.h, true);
+                self.registers.h = self.rotate(self.registers.h, true, true);
                 8
             }
             0x15 => {
-                self.registers.l = self.rotate(self.registers.l, true);
+                self.registers.l = self.rotate(self.registers.l, true, true);
                 8
             }
             0x16 => {
                 let byte = self.read_ram_at_hl(bus);
-                let result = self.rotate(byte, true);
+                let result = self.rotate(byte, true, true);
                 self.write_ram_at_hl(bus, result);
                 16
             }
             // RRC n
             0x0F => {
-                self.registers.a = self.rotate_circular(self.registers.a, false);
+                self.registers.a = self.rotate_circular(self.registers.a, false, true);
                 8
             }
             0x08 => {
-                self.registers.b = self.rotate_circular(self.registers.b, false);
+                self.registers.b = self.rotate_circular(self.registers.b, false, true);
                 8
             }
             0x09 => {
-                self.registers.c = self.rotate_circular(self.registers.c, false);
+                self.registers.c = self.rotate_circular(self.registers.c, false, true);
                 8
             }
             0x0A => {
-                self.registers.d = self.rotate_circular(self.registers.d, false);
+                self.registers.d = self.rotate_circular(self.registers.d, false, true);
                 8
             }
             0x0B => {
-                self.registers.e = self.rotate_circular(self.registers.e, false);
+                self.registers.e = self.rotate_circular(self.registers.e, false, true);
                 8
             }
             0x0C => {
-                self.registers.h = self.rotate_circular(self.registers.h, false);
+                self.registers.h = self.rotate_circular(self.registers.h, false, true);
                 8
             }
             0x0D => {
-                self.registers.l = self.rotate_circular(self.registers.l, false);
+                self.registers.l = self.rotate_circular(self.registers.l, false, true);
                 8
             }
             0x0E => {
                 let byte = self.read_ram_at_hl(bus);
-                let result = self.rotate_circular(byte, false);
+                let result = self.rotate_circular(byte, false, true);
                 self.write_ram_at_hl(bus, result);
                 16
             }
             // RR n
             0x1F => {
-                self.registers.a = self.rotate(self.registers.a, false);
+                self.registers.a = self.rotate(self.registers.a, false, true);
                 8
             }
             0x18 => {
-                self.registers.b = self.rotate(self.registers.b, false);
+                self.registers.b = self.rotate(self.registers.b, false, true);
                 8
             }
             0x19 => {
-                self.registers.c = self.rotate(self.registers.c, false);
+                self.registers.c = self.rotate(self.registers.c, false, true);
                 8
             }
             0x1A => {
-                self.registers.d = self.rotate(self.registers.d, false);
+                self.registers.d = self.rotate(self.registers.d, false, true);
                 8
             }
             0x1B => {
-                self.registers.e = self.rotate(self.registers.e, false);
+                self.registers.e = self.rotate(self.registers.e, false, true);
                 8
             }
             0x1C => {
-                self.registers.h = self.rotate(self.registers.h, false);
+                self.registers.h = self.rotate(self.registers.h, false, true);
                 8
             }
             0x1D => {
-                self.registers.l = self.rotate(self.registers.l, false);
+                self.registers.l = self.rotate(self.registers.l, false, true);
                 8
             }
             0x1E => {
                 let byte = self.read_ram_at_hl(bus);
-                let result = self.rotate(byte, false);
+                let result = self.rotate(byte, false, true);
                 self.write_ram_at_hl(bus, result);
                 16
             }
@@ -1788,7 +1872,7 @@ impl CPU {
                 12
             }
             0x77 => {
-                self.test_bit(self.registers.a, 0);
+                self.test_bit(self.registers.a, 6);
                 8
             }
             0x78 => {
@@ -2509,8 +2593,9 @@ impl CPU {
         result
     }
     // ALU 16-Bit
-    fn alu_add_16_imm(&mut self, a: u16, b: u8) -> u16 {
-        let result = a.wrapping_add(b as u16);
+    fn alu_add_16_imm(&mut self, a: u16, byte: u8) -> u16 {
+        let b = byte as i8 as i16 as u16;
+        let result = a.wrapping_add(b);
 
         self.registers.f.flag(Flag::Z, false);
         self.registers.f.flag(Flag::N, false);
@@ -2588,17 +2673,17 @@ impl CPU {
 
     fn scf(&mut self) {
         self.registers.f.flag(Flag::N, false);
-        self.registers.f.flag(Flag::N, false);
+        self.registers.f.flag(Flag::H, false);
         self.registers.f.flag(Flag::C, true);
     }
 
     // Rotates & Shifts
-    fn rotate_circular(&mut self, a: u8, left: bool) -> u8 {
+    fn rotate_circular(&mut self, a: u8, left: bool, check_zero: bool) -> u8 {
         let lost_bit = if left { a & 0b10000000 } else { a & 0b00000001 };
         let mut result = if left { a << 1 } else { a >> 1 };
         result |= if left { lost_bit >> 7 } else { lost_bit << 7 };
 
-        self.registers.f.flag(Flag::Z, result == 0);
+        self.registers.f.flag(Flag::Z, result == 0 && check_zero);
         self.registers.f.flag(Flag::N, false);
         self.registers.f.flag(Flag::H, false);
         self.registers.f.flag(Flag::C, lost_bit != 0);
@@ -2606,8 +2691,8 @@ impl CPU {
         result
     }
 
-    fn rotate(&mut self, a: u8, left: bool) -> u8 {
-        let lost_bit = if left { a & 0b1000000 } else { a & 0b00000001 };
+    fn rotate(&mut self, a: u8, left: bool, check_zero: bool) -> u8 {
+        let lost_bit = if left { a & 0b10000000 } else { a & 0b00000001 };
         let mut result = if left { a << 1 } else { a >> 1 };
         result |= if self.registers.f.carry {
             if left {
@@ -2619,7 +2704,7 @@ impl CPU {
             0
         };
 
-        self.registers.f.flag(Flag::Z, result == 0);
+        self.registers.f.flag(Flag::Z, result == 0 && check_zero);
         self.registers.f.flag(Flag::N, false);
         self.registers.f.flag(Flag::H, false);
         self.registers.f.flag(Flag::C, lost_bit != 0);
@@ -2632,7 +2717,7 @@ impl CPU {
         let mut result = if left { a << 1 } else { a >> 1 };
 
         if !left && retain_msb {
-            result |= outter_bit;
+            result |= a & 0b10000000;
         }
 
         self.registers.f.flag(Flag::Z, result == 0);
@@ -2703,18 +2788,20 @@ fn log(s: String) {
 
 fn hex8(a: u8) -> String {
     let result = format!("{:X}", a).to_string();
-    if result.len() < 2 {
-        format!("0{}", result)
-    } else {
-        result
+    match result.len() {
+        0 => "00".to_string(),
+        1 => format!("0{}", result),
+        _ => result,
     }
 }
 
 fn hex16(a: u16) -> String {
     let result = format!("{:X}", a).to_string();
-    if result.len() < 4 {
-        format!("0{}", result)
-    } else {
-        result
+    match result.len() {
+        0 => "0000".to_string(),
+        1 => format!("000{}", result),
+        2 => format!("00{}", result),
+        3 => format!("0{}", result),
+        _ => result,
     }
 }

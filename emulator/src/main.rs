@@ -17,7 +17,7 @@ const SCREEN_WIDTH: usize = 160;
 const SCREEN_HEIGHT: usize = 144;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
-const TICKS_PER_FRAME: usize = 10;
+const TICKS_PER_FRAME: usize = 60;
 
 fn draw_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
     // Clear canvas as black
@@ -76,7 +76,7 @@ fn main() {
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
+    let mut rom = File::open("../roms/02-interrupts.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
@@ -89,6 +89,7 @@ fn main() {
     // gameboy.ppu.set_enabled(&mut gameboy.bus, true);
 
     // Setup SDL
+    /*
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
@@ -124,5 +125,10 @@ fn main() {
         //tick_timers();
 
         draw_screen(&mut gameboy, &mut canvas);
+    }
+    */
+
+    loop {
+        gameboy.tick();
     }
 }

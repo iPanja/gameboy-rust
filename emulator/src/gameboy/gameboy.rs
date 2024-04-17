@@ -18,7 +18,9 @@ impl GameBoy {
     }
 
     pub fn tick(&mut self) {
-        let _cycles = self.cpu.step(&mut self.bus);
+        self.enable_display(); // TODO: place this somewhere more logical...
+
+        let _cycles = self.cpu.tick(&mut self.bus);
     }
 
     pub fn read_rom(&mut self, buffer: &Vec<u8>) {
@@ -30,6 +32,7 @@ impl GameBoy {
     }
 
     pub fn enable_display(&mut self) {
+        self.bus.ram.ram[0xFF44] = 0x90;
         self.bus.ram.ram[0xFF40] = 0b1010000;
         self.bus.ram.ram[0xFF42] = 0;
     }
