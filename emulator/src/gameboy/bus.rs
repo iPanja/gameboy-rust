@@ -52,8 +52,7 @@ impl Bus {
 
     pub fn debug(&mut self){
         // Build
-        let s_byte = self.ram_read_byte(0xFF02);
-        if s_byte == 0x81 {
+        if self.ram_read_byte(0xFF02) == 0x81 {
             let c_byte = self.ram_read_byte(0xFF01);
             let c = char::from(c_byte);
             self.dbg.push(c);
