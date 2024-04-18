@@ -1,6 +1,6 @@
 use super::{Bus, Interrupt};
 
-const CPU_CLOCK: u32 = 67335; // Random value, fix this
+const CPU_CLOCK: f64 = 4194304f64; // Random value, fix this
 
 pub struct Timer {
     // External Memory Mapped
@@ -12,6 +12,8 @@ pub struct Timer {
     internal_div: u16,
     prev_and_result: bool,
     pending_tma_reset: u8,
+    // Raise timer interrupt
+    pub raise_interrupt: Option<Interrupt>,
 }
 
 impl Timer {
@@ -24,6 +26,7 @@ impl Timer {
             internal_div: 0,
             prev_and_result: false,
             pending_tma_reset: 0,
+            raise_interrupt: None,
         }
     }
 
@@ -56,12 +59,13 @@ impl Timer {
         };
     }
 
-    pub fn tick(&mut self, bus: &mut Bus, t_cycles: u8) {
+    pub fn tick(&mut self, t_cycles: u8) {
         self.internal_div = self.internal_div.wrapping_add(t_cycles as u16);
 
         self.pending_tma_reset = match self.pending_tma_reset {
             1 => {
                 self.tima = self.tma;
+                self.raise_interrupt = Some(Interrupt::Timer);
                 0
             }
             0 => 0,
@@ -80,18 +84,15 @@ impl Timer {
         let and_result = bit != 0 && self.is_clock_enabled();
         if !self.prev_and_result && and_result {
             // Looking for falling edge (1 -> 0)
-            // Increment TIMA, not sure if it's by 1
-            self.tima += 1;
+            self.tima = self.tima.wrapping_add(1);
             // Delay overflow checking
-        }
-
-        // Delayed
-        if self.tima == 0x00 {
-            self.pending_tma_reset = 5;
+            if self.tima == 0x00 {
+                self.pending_tma_reset = 5;
+            }
         }
     }
 
-    fn get_clock_freq(&self) -> u32 {
+    pub fn get_clock_freq(&self) -> f64 {
         CPU_CLOCK
             / match self.tac & 0x3 {
                 0b00 => 1024, // Frequency 4096
@@ -99,7 +100,7 @@ impl Timer {
                 0b10 => 64,   // Frequency 65536
                 0b11 => 256,  // Frequency 16382
                 _ => panic!("Invalid clock freq!"),
-            }
+            } as f64
     }
 
     fn is_clock_enabled(&self) -> bool {

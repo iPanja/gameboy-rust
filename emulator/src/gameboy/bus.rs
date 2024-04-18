@@ -65,6 +65,12 @@ impl Bus {
         self.ram_write_byte(0xFF0F, ifr | mask);
     }
 
+    pub fn tick(&mut self, cycles: u8) {
+        self.timer.tick(cycles);
+        let mut current_frame_cycles: u8 = 0;
+        // ppu
+    }
+
     pub fn debug(&mut self) {
         // Build
         if self.ram_read_byte(0xFF02) == 0x81 {
@@ -72,14 +78,16 @@ impl Bus {
             let c = char::from(c_byte);
             self.dbg.push(c);
             self.ram_write_byte(0xFF02, 0);
-        }
 
-        // Print
-        let result: String = self.dbg.iter().collect();
-        println!("Serial Port: {}", result);
+            // Print
+            let result: String = self.dbg.iter().collect();
+            println!("Serial Port: {}", result);
 
-        if result.contains("Failed") {
-            panic!("Test failed!");
+            if result.contains("Failed") {
+                panic!("Test failed!");
+            } else if result.contains("Passed") {
+                std::process::exit(0);
+            }
         }
     }
 }

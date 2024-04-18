@@ -2,3 +2,4 @@ emulator/target
 emulator/target/*
 roms/*
 src/gameboy/cpu.rs.old
+emulator/gb-log

@@ -66,7 +66,8 @@ impl CPU {
             self.is_halted = false;
             if !self.interrupts_enabled {
                 // BUG
-                println!("halt bug!");
+                println!("\thalt bug!");
+                return 1;
                 self.registers.pc -= 1;
             }
         }
@@ -1094,7 +1095,7 @@ impl CPU {
             0x00 => 4,
             // HALT
             0x76 => {
-                println!("\nHALTED\n");
+                println!("\tHALT INSTR! {:#X}", self.registers.pc - 1);
                 self.is_halted = true;
                 4
             }

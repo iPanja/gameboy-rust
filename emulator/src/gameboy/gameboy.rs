@@ -19,13 +19,21 @@ impl GameBoy {
 
     pub fn tick(&mut self) {
         self.enable_display(); // TODO: place this somewhere more logical...
-        let mut current_frame_cycles: u8 = 0;
+        let mut current_frame_cycles: f64 = 0f64;
 
-        while current_frame_cycles < 69905 {
+        while current_frame_cycles < self.bus.timer.get_clock_freq() {
             let _cycles = self.cpu.tick(&mut self.bus);
-            current_frame_cycles += _cycles;
-            //self.bus.timer.tick(bus, _cycles);
+            current_frame_cycles += _cycles as f64;
+            self.bus.tick(_cycles);
             // ppu
+
+            self.bus.timer.raise_interrupt = match self.bus.timer.raise_interrupt {
+                None => None,
+                Some(x) => {
+                    self.bus.trigger_interrupt(x);
+                    None
+                }
+            }
         }
     }
 
