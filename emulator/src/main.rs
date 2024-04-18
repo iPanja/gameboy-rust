@@ -76,7 +76,7 @@ fn main() {
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = File::open("../roms/02-interrupts.gb").expect("INVALID ROM");
+    let mut rom = File::open("../roms/individual/02-interrupts.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 

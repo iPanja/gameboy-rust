@@ -1,9 +1,10 @@
-use super::{Memory, PPU};
+use super::{Interrupt, Memory, Timer, PPU};
 
 pub struct Bus {
     pub ram: Memory,
     pub ppu: PPU,
-    dbg: Vec<char>
+    pub timer: Timer,
+    dbg: Vec<char>,
 }
 
 impl Bus {
@@ -11,26 +12,33 @@ impl Bus {
         Bus {
             ram: Memory::new(),
             ppu: PPU::new(),
-            dbg: Vec::new()
+            timer: Timer::new(),
+            dbg: Vec::new(),
         }
     }
 
     pub fn ram_read_byte(&self, address: u16) -> u8 {
-        if 0xE000 <= address && address <= 0xFDFF { println!("reading echo ram"); }
+        if 0xE000 <= address && address <= 0xFDFF {
+            println!("reading echo ram");
+        }
 
         match address {
             0x8000..=0x97FF => self.ppu.read_byte((address - 0x8000) as usize), // PPU - Tile RAM & Background Map (Division at 0x9800)
             0xFE00..=0xFE9F => self.ppu.read_byte((address - 0x6000) as usize), // PPU - OAM
+            0xFF04..=0xFF07 => self.timer.read_byte((address - 0xFF04) as usize), // Timer and Divider Registers
             _ => self.ram.read_byte(address),
         }
     }
 
     pub fn ram_write_byte(&mut self, address: u16, byte: u8) {
-        if 0xE000 <= address && address <= 0xFDFF { println!("writing echo ram"); }
+        if 0xE000 <= address && address <= 0xFDFF {
+            println!("writing echo ram");
+        }
 
         match address {
             0x8000..=0x97FF => self.ppu.write_byte((address - 0x8000) as usize, byte), // PPU - Tile RAM & Background Map (Division at 0x9800)
             0xFE00..=0xFE9F => self.ppu.write_byte((address - 0x6000) as usize, byte), // PPU - OAM
+            0xFF04..=0xFF07 => self.timer.write_byte((address - 0xFF04) as usize, byte), // Timer and Divider Registers
             _ => self.ram.write_byte(address, byte),
         }
     }
@@ -50,7 +58,14 @@ impl Bus {
         }
     }
 
-    pub fn debug(&mut self){
+    pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
+        let mask = interrupt.get_flag_mask();
+        let ifr = self.ram_read_byte(0xFF0F); // IF_REG
+
+        self.ram_write_byte(0xFF0F, ifr | mask);
+    }
+
+    pub fn debug(&mut self) {
         // Build
         if self.ram_read_byte(0xFF02) == 0x81 {
             let c_byte = self.ram_read_byte(0xFF01);
@@ -62,5 +77,9 @@ impl Bus {
         // Print
         let result: String = self.dbg.iter().collect();
         println!("Serial Port: {}", result);
+
+        if result.contains("Failed") {
+            panic!("Test failed!");
+        }
     }
 }
