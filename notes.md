@@ -79,3 +79,9 @@ Aspects:
 ## ALU
 
 ### Operations
+
+# TODO
+
+- Utilize rust language things
+  - Implement traits
+    - Have a trait that PPU, Timer, Memory (?) implement that allow read_byte, write_byte (word equiv as well).

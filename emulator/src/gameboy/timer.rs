@@ -1,10 +1,17 @@
 use super::{Bus, Interrupt};
 
+const CPU_CLOCK: u32 = 67335; // Random value, fix this
+
 pub struct Timer {
-    div: u8,  // Divider register - 0xFF04
+    // External Memory Mapped
+    div: u8, // Divider register - 0xFF04  |   These are the upper 8 bits that compose the internal div
     tima: u8, // Timer counter - 0xFF05
-    tma: u8,  // Timer modulo - 0xFF06
-    tac: u8,  // Timer control - 0xFF07
+    tma: u8, // Timer modulo - 0xFF06
+    tac: u8, // Timer control - 0xFF07
+    // Internal Registers
+    internal_div: u16,
+    prev_and_result: bool,
+    pending_tma_reset: u8,
 }
 
 impl Timer {
@@ -14,6 +21,9 @@ impl Timer {
             tima: 0,
             tma: 0,
             tac: 0,
+            internal_div: 0,
+            prev_and_result: false,
+            pending_tma_reset: 0,
         }
     }
 
@@ -32,8 +42,11 @@ impl Timer {
 
     pub fn write_byte(&mut self, index: usize, value: u8) {
         match index {
-            0x00 => self.div = 0x00, // Writing any value to this register resets it to 0x00
-            0x01 => self.tima = value,
+            0x00 => self.internal_div = 0x00, // Writing any value to this register resets it to 0x00
+            0x01 => {
+                self.tima = value;
+                self.pending_tma_reset = 0
+            }
             0x02 => self.tma = value,
             0x03 => self.tac = value,
             _ => panic!(
@@ -43,30 +56,53 @@ impl Timer {
         };
     }
 
-    pub fn increment_clock(&mut self, bus: &mut Bus, freq: u8) {
-        // TODO - If a TMA write is executed on the same M-cycle as the content of TMA is transferred to TIMA due to a timer overflow, the old value is transferred to TIMA.
-        let result = self.tima.wrapping_add(freq);
+    pub fn tick(&mut self, bus: &mut Bus, t_cycles: u8) {
+        self.internal_div = self.internal_div.wrapping_add(t_cycles as u16);
 
-        self.tima = if result < self.tima {
-            // Overflow!
-            bus.trigger_interrupt(Interrupt::Timer);
-            self.tma
-        } else {
-            result
+        self.pending_tma_reset = match self.pending_tma_reset {
+            1 => {
+                self.tima = self.tma;
+                0
+            }
+            0 => 0,
+            x => x - 1,
+        };
+
+        let bit_pos = match self.tac & 0x3 {
+            0b00 => 9,
+            0b01 => 3,
+            0b10 => 5,
+            0b11 => 7,
+            _ => panic!("Unsupported??? {:#X}", self.tac & 0x3),
+        };
+        let bit = self.internal_div & (0b1 << bit_pos);
+
+        let and_result = bit != 0 && self.is_clock_enabled();
+        if !self.prev_and_result && and_result {
+            // Looking for falling edge (1 -> 0)
+            // Increment TIMA, not sure if it's by 1
+            self.tima += 1;
+            // Delay overflow checking
+        }
+
+        // Delayed
+        if self.tima == 0x00 {
+            self.pending_tma_reset = 5;
         }
     }
 
-    fn get_clock_freq(&self) -> u16 {
-        match self.tac & 0x3 {
-            0b00 => 256,
-            0b01 => 4,
-            0b10 => 16,
-            0b11 => 64,
-            _ => panic!("Invalid clock freq!"),
-        }
+    fn get_clock_freq(&self) -> u32 {
+        CPU_CLOCK
+            / match self.tac & 0x3 {
+                0b00 => 1024, // Frequency 4096
+                0b01 => 16,   // Frqeuency 262144
+                0b10 => 64,   // Frequency 65536
+                0b11 => 256,  // Frequency 16382
+                _ => panic!("Invalid clock freq!"),
+            }
     }
 
-    fn is_tima_enabled(&self) -> bool {
+    fn is_clock_enabled(&self) -> bool {
         return self.tac & 0x4 != 0;
     }
 }

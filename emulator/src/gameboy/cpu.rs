@@ -49,7 +49,7 @@ impl CPU {
         ));
     }
 
-    pub fn tick(&mut self, bus: &mut Bus) -> i16 {
+    pub fn tick(&mut self, bus: &mut Bus) -> u8 {
         // Handle pending interrupt action
         self.interrupt_action = match self.interrupt_action {
             Some(x) => {
@@ -62,7 +62,7 @@ impl CPU {
         // HALT and HALT BUG
         let is_interrupt_pending: bool = bus.ram_read_byte(IF_REG) & bus.ram_read_byte(IE_REG) != 0;
 
-        if self.is_halted && is_interrupt_pending{
+        if self.is_halted && is_interrupt_pending {
             self.is_halted = false;
             if !self.interrupts_enabled {
                 // BUG
@@ -77,11 +77,9 @@ impl CPU {
 
         // Handle interrupts or next step
         self.log_state(bus);
-        let cycles: i16 = match self.handle_interrupt(bus) {
-            Some(x) => x as i16,
-            None => {
-                self.step(bus)
-            }
+        let cycles: u8 = match self.handle_interrupt(bus) {
+            Some(x) => x,
+            None => self.step(bus),
         };
 
         cycles
@@ -93,24 +91,30 @@ impl CPU {
             let ier = bus.ram_read_byte(IE_REG);
 
             let triggers = ifr & ier;
-            if triggers != 0 { // Some interrupt flag is enabled
+            if triggers != 0 {
+                // Some interrupt flag is enabled
                 self.interrupt_action = None;
                 self.interrupts_enabled = false; // Disable interrupt until this one is completed (changed upon completion, in RETI call)
 
                 // Handled in order of priority
-                if triggers & 0x1 == 0x1 { // V Blank
+                if triggers & 0x1 == 0x1 {
+                    // V Blank
                     self.call(bus, 0x40);
                     bus.ram_write_byte(IF_REG, ifr & !0x1);
-                }else if triggers & 0x2 == 0x2 { // LCD Status Triggers
+                } else if triggers & 0x2 == 0x2 {
+                    // LCD Status Triggers
                     self.call(bus, 0x48);
                     bus.ram_write_byte(IF_REG, ifr & !0x2);
-                }else if triggers & 0x4 == 0x4{ // Timer Overflow
+                } else if triggers & 0x4 == 0x4 {
+                    // Timer Overflow
                     self.call(bus, 0x50);
                     bus.ram_write_byte(IF_REG, ifr & !0x4);
-                }else if triggers & 0x8 == 0x8 { // Serial Link
+                } else if triggers & 0x8 == 0x8 {
+                    // Serial Link
                     self.call(bus, 0x58);
                     bus.ram_write_byte(IF_REG, ifr & !0x8);
-                }else if triggers & 0x10 == 0x10{ // Joypad Press
+                } else if triggers & 0x10 == 0x10 {
+                    // Joypad Press
                     self.call(bus, 0x60);
                     bus.ram_write_byte(IF_REG, ifr & !0x10);
                 };
@@ -122,13 +126,12 @@ impl CPU {
         return None;
     }
 
-    pub fn step(&mut self, bus: &mut Bus) -> i16 {
-
+    pub fn step(&mut self, bus: &mut Bus) -> u8 {
         let opcode = bus.ram_read_byte(self.registers.pc);
         //println!("instruction {:#X}: {:#X}", self.registers.pc, opcode);
         self.registers.pc += 1;
 
-        let cycles: i16 = match opcode {
+        let cycles: u8 = match opcode {
             // FORMAT 0x00 => { statement ; clock_cycles }
             //
             // 8-Bit Loads
@@ -1357,12 +1360,12 @@ impl CPU {
         cycles
     }
 
-    fn step_cb(&mut self, bus: &mut Bus) -> i16 {
+    fn step_cb(&mut self, bus: &mut Bus) -> u8 {
         let opcode = bus.ram_read_byte(self.registers.pc);
         //println!("CB instruction {:#X}: {:#X}", self.registers.pc, opcode);
         self.registers.pc += 1;
 
-        let cycles: i16 = match opcode {
+        let cycles: u8 = match opcode {
             // MISC
             // SWAP n
             0x37 => {

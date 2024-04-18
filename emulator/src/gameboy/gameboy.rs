@@ -19,8 +19,14 @@ impl GameBoy {
 
     pub fn tick(&mut self) {
         self.enable_display(); // TODO: place this somewhere more logical...
+        let mut current_frame_cycles: u8 = 0;
 
-        let _cycles = self.cpu.tick(&mut self.bus);
+        while current_frame_cycles < 69905 {
+            let _cycles = self.cpu.tick(&mut self.bus);
+            current_frame_cycles += _cycles;
+            //self.bus.timer.tick(bus, _cycles);
+            // ppu
+        }
     }
 
     pub fn read_rom(&mut self, buffer: &Vec<u8>) {
