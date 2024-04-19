@@ -35,6 +35,20 @@ impl fmt::Debug for Registers {
 impl Registers {
     pub fn new() -> Self {
         Registers {
+            a: 0x00,
+            b: 0x00,
+            d: 0x00,
+            h: 0x00,
+            f: FlagsRegister::new(),
+            c: 0x00,
+            e: 0x00,
+            l: 0x00,
+            pc: 0x00,
+            sp: 0x00,
+        }
+    }
+    pub fn new_post_boot_rom() -> Self {
+        Registers {
             a: 0x01,
             b: 0x00,
             d: 0x00,

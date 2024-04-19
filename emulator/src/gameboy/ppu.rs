@@ -11,13 +11,18 @@ const TILE_MAP_SIZE: usize = 0x3FF;
 pub struct PPU {
     vram: [u8; VRAM_SIZE],
     tile_set: [Tile; 384],
+    lcdc: u8, // PPU control register - 0xFF40
+    stat: u8, // PPU status register - 0xFF41
+    scy: u8,  // Vertical scroll register - 0xFF42
+    scx: u8,  // Horizontal scroll register - 0xFF43
+    ly: u8,   // Scanline register - 0xFF44
+              // bg_map_1: [Tile; 0x3FF], // Background Map 1 - 0x9800 - 9x9BFF
+              // bg_map_2: [Tile; 0x3FF], // Background Map 2 - 0x9C00 - 0x9FFF
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mode {
-    /// In horizontal blanking
     HBlank = 0,
-    /// In vertical blanking
     VBlank = 1,
     /// Accessing sprite memory, Sprite attributes RAM [0xfe00, 0xfe9f]
     /// can't be accessed
@@ -27,13 +32,14 @@ pub enum Mode {
     Active = 3,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Pixel {
     White,     // 0b11
     DarkGray,  // 0b10
     LightGray, // 0b01
     Black,     // 0b00
 }
+
 type Tile = [[Pixel; 8]; 8];
 fn empty_tile() -> Tile {
     [[Pixel::Black; 8]; 8]
@@ -140,17 +146,38 @@ impl PPU {
         PPU {
             vram: [0; VRAM_SIZE],
             tile_set: [empty_tile(); 384],
+            lcdc: 0,
+            stat: 0,
+            scy: 0,
+            scx: 0,
+            ly: 0,
         }
     }
 
-    pub fn read_byte(&self, index: usize) -> u8 {
-        self.vram[index]
+    pub fn read_byte(&self, index: usize, real_addr: usize) -> u8 {
+        match real_addr {
+            0xFF40 => self.lcdc,
+            0xFF41 => self.stat,
+            0xFF42 => self.scy,
+            0xFF43 => self.scx,
+            0xFF44 => self.ly,
+            _ => self.vram[index],
+        }
     }
 
-    pub fn write_byte(&mut self, index: usize, value: u8) {
+    pub fn write_byte(&mut self, index: usize, real_addr: usize, value: u8) {
         //println!("offset of: {:#X}", index);
 
-        self.vram[index] = value;
+        println!("writing to: {:#X} - {:#X}", real_addr, value);
+
+        match real_addr {
+            0xFF40 => self.lcdc = value,
+            0xFF41 => self.stat = value,
+            0xFF42 => self.scy = value,
+            0xFF43 => self.scx = value,
+            0xFF44 => self.ly = value,
+            _ => self.vram[index] = value,
+        };
 
         // Not writing to tile set storage => no need to cache
         if index >= 0x1800 {
@@ -207,6 +234,47 @@ impl PPU {
         bus.ram.ram[0xFF40] = 0b1010000 | self.vram[0xFF40];
     }
 
+    fn get_address_mode(&self) -> u16 {
+        match self.lcdc & 0x10 {
+            0 => 0x8800,
+            _ => 0x8000,
+        }
+    }
+
+    fn get_tile(&self, id: u16) -> Tile {
+        match self.get_address_mode() {
+            0x8800 => {
+                let idx = id as i16;
+                self.tile_set[(192 + id as i16) as usize]
+            }
+            0x8000 => self.tile_set[id as usize],
+            _ => panic!("Unsupported address mode!"),
+        }
+    }
+
+    fn get_background_map(&self) -> [Tile; 1024] {
+        println!("SCX: {:#X}, SCY: {:#X}", self.scx, self.scy);
+
+        let bg_map_address: usize = match self.lcdc & 0x8 {
+            0 => 0x9800,
+            _ => 0x9C00,
+        };
+        let mut tiles: [Tile; 1024] = [empty_tile(); 1024];
+        // Background consists of 32x32 tiles, or 256x256 pixels
+        // The viewport (Game Boy screen) can only show 20x18 tiles (160x144 pixels)
+        let starting_offset = (self.scx + self.scy * 20) as usize;
+        let start_index: usize = (bg_map_address + starting_offset) - 0x8000;
+        let end_index: usize = start_index + (20 * 18) + 1;
+
+        for (i, tile_id) in self.vram[start_index..=end_index].iter().enumerate() {
+            tiles[i] = self.get_tile(*tile_id as u16);
+            //println!("tile data: {:?}", tiles[i]);
+            //println!("tile {:#X}", *tile_id);
+        }
+
+        tiles
+    }
+
     pub fn get_display(
         &self,
         bus: &Bus,
@@ -217,18 +285,17 @@ impl PPU {
 
         let mut buffer = [[Pixel::White; SCREEN_WIDTH]; SCREEN_HEIGHT];
 
-        let lcdc: u8 = bus.ram_read_byte(0xFF40 as u16);
-        let addressing_mode = if lcdc & 0b10000 == 0b10000 {
-            0x8000
-        } else {
-            0x9000
-        };
-
-        let (byte1, byte2) = if addressing_mode == 0x8000 {
-            (self.tile_set[0], self.tile_set[1])
-        } else {
-            (self.tile_set[0], self.tile_set[1])
-        };
+        for (tile_index, tile) in self.get_background_map().iter().enumerate() {
+            let x = tile_index % 20;
+            let y = tile_index / 20;
+            for dx in 0..8 {
+                for dy in 0..8 {
+                    // (y + dy) * 160 + (x + dx) * 8
+                    buffer[y + dy][x + dx] = Pixel::LightGray; //tile[dy][dx];
+                                                               //println!("writing tile data: {:?}", tile[dy][dx]);
+                }
+            }
+        }
 
         buffer
     }

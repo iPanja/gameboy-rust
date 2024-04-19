@@ -8,6 +8,7 @@ use std::io::prelude::*;
 // const IS_DEBUGGING: bool = false;
 const IF_REG: u16 = 0xFF0F;
 const IE_REG: u16 = 0xFFFF;
+pub const IS_DEBUGGING: bool = false;
 
 pub struct CPU {
     registers: Registers,
@@ -20,7 +21,7 @@ pub struct CPU {
 impl CPU {
     pub fn new() -> Self {
         CPU {
-            registers: Registers::new(),
+            registers: Registers::new(), // Registers::new_post_boot_rom()
             is_halted: false,
             interrupt_action: Option::None,
             interrupts_enabled: false,
@@ -2778,6 +2779,10 @@ impl CPU {
 }
 
 fn log(s: String) {
+    if !IS_DEBUGGING {
+        return;
+    };
+
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)

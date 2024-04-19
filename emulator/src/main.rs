@@ -1,16 +1,16 @@
 mod gameboy;
 
 use gameboy::ppu::Pixel;
-use gameboy::GameBoy;
+use gameboy::{cpu, GameBoy, CPU};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
-use std::env;
 use std::fs::File;
 use std::io::Read;
+use std::{env, fs};
 
 const SCALE: u32 = 1;
 const SCREEN_WIDTH: usize = 160;
@@ -70,26 +70,30 @@ fn draw_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
 }
 
 fn main() {
+    // Clear LOG
+    if cpu::IS_DEBUGGING {
+        fs::remove_file("gb-log");
+    }
+
     env::set_var("RUST_BACKTRACE", "1");
     // Read boot ROM file
     let mut bootstrap_buffer: Vec<u8> = Vec::new();
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = File::open("../roms/individual/02-interrupts.gb").expect("INVALID ROM");
+    let mut rom = File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
     // Create emulator
     let mut gameboy = GameBoy::new();
     gameboy.read_rom(&rom_buffer);
-    //gameboy.read_rom(&bootstrap_buffer);
+    gameboy.read_rom(&bootstrap_buffer);
 
     // Simulate ticks
     // gameboy.ppu.set_enabled(&mut gameboy.bus, true);
 
     // Setup SDL
-    /*
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
@@ -126,9 +130,10 @@ fn main() {
 
         draw_screen(&mut gameboy, &mut canvas);
     }
-    */
 
+    /*
     loop {
         gameboy.tick();
     }
+    */
 }

@@ -23,8 +23,12 @@ impl Bus {
         }
 
         match address {
-            0x8000..=0x97FF => self.ppu.read_byte((address - 0x8000) as usize), // PPU - Tile RAM & Background Map (Division at 0x9800)
-            0xFE00..=0xFE9F => self.ppu.read_byte((address - 0x6000) as usize), // PPU - OAM
+            0x8000..=0x9FFF => self // 0x97FF
+                .ppu
+                .read_byte((address - 0x8000) as usize, address as usize), // PPU - Tile RAM & Background Map (Division at 0x9800)
+            0xFE00..=0xFE9F => self
+                .ppu
+                .read_byte((address - 0x5200) as usize, address as usize), // PPU - OAM
             0xFF04..=0xFF07 => self.timer.read_byte((address - 0xFF04) as usize), // Timer and Divider Registers
             _ => self.ram.read_byte(address),
         }
@@ -36,8 +40,15 @@ impl Bus {
         }
 
         match address {
-            0x8000..=0x97FF => self.ppu.write_byte((address - 0x8000) as usize, byte), // PPU - Tile RAM & Background Map (Division at 0x9800)
-            0xFE00..=0xFE9F => self.ppu.write_byte((address - 0x6000) as usize, byte), // PPU - OAM
+            0x8000..=0x9FFF => {
+                // 0x97FF
+                self.ppu
+                    .write_byte((address - 0x8000) as usize, address as usize, byte)
+            } // PPU - Tile RAM & Background Map (Division at 0x9800)
+            0xFE00..=0xFE9F => {
+                self.ppu
+                    .write_byte((address - 0x5200) as usize, address as usize, byte)
+            } // PPU - OAM
             0xFF04..=0xFF07 => self.timer.write_byte((address - 0xFF04) as usize, byte), // Timer and Divider Registers
             _ => self.ram.write_byte(address, byte),
         }
