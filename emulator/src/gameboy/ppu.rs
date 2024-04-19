@@ -168,7 +168,7 @@ impl PPU {
     pub fn write_byte(&mut self, index: usize, real_addr: usize, value: u8) {
         //println!("offset of: {:#X}", index);
 
-        println!("writing to: {:#X} - {:#X}", real_addr, value);
+        // println!("writing to: {:#X} - {:#X}", real_addr, value);
 
         match real_addr {
             0xFF40 => self.lcdc = value,
@@ -253,7 +253,7 @@ impl PPU {
     }
 
     fn get_background_map(&self) -> [Tile; 1024] {
-        println!("SCX: {:#X}, SCY: {:#X}", self.scx, self.scy);
+        //println!("SCX: {:#X}, SCY: {:#X}", self.scx, self.scy);
 
         let bg_map_address: usize = match self.lcdc & 0x8 {
             0 => 0x9800,

@@ -12,12 +12,12 @@ use std::fs::File;
 use std::io::Read;
 use std::{env, fs};
 
-const SCALE: u32 = 1;
+const SCALE: u32 = 2;
 const SCREEN_WIDTH: usize = 160;
 const SCREEN_HEIGHT: usize = 144;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
-const TICKS_PER_FRAME: usize = 60;
+const TICKS_PER_FRAME: usize = 1;
 
 fn draw_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
     // Clear canvas as black
@@ -58,10 +58,7 @@ fn draw_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
                 }
             }
 
-            let sx = ((x + y) % SCREEN_WIDTH) as u32;
-            let sy = ((x + y) % SCREEN_HEIGHT) as u32;
-
-            let rect = Rect::new((sx * SCALE) as i32, (sy * SCALE) as i32, SCALE, SCALE);
+            let rect = Rect::new((x as u32 * SCALE) as i32, (y as u32 * SCALE) as i32, SCALE, SCALE);
             canvas.fill_rect(rect).unwrap()
         }
     }
@@ -81,7 +78,7 @@ fn main() {
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
+    let mut rom = File::open("../roms/01-special.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
@@ -125,6 +122,7 @@ fn main() {
 
         for _ in 0..TICKS_PER_FRAME {
             gameboy.tick();
+            draw_screen(&mut gameboy, &mut canvas);
         }
         //tick_timers();
 
