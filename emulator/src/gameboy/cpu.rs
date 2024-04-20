@@ -11,7 +11,7 @@ const IE_REG: u16 = 0xFFFF;
 pub const IS_DEBUGGING: bool = false;
 
 pub struct CPU {
-    registers: Registers,
+    pub registers: Registers,
     is_halted: bool,
     interrupt_action: Option<bool>,
     interrupts_enabled: bool,

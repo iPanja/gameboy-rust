@@ -1,4 +1,5 @@
-use std::io::empty;
+use sdl2::pixels::Color;
+use std::{fmt, fs::OpenOptions, io::prelude::*};
 
 use crate::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
@@ -9,15 +10,23 @@ const VRAM_SIZE: usize = (0x9FFF - 0x8000) + (0xFE9F - 0xFE00);
 const TILE_MAP_SIZE: usize = 0x3FF;
 
 pub struct PPU {
-    vram: [u8; VRAM_SIZE],
-    tile_set: [Tile; 384],
-    lcdc: u8, // PPU control register - 0xFF40
-    stat: u8, // PPU status register - 0xFF41
-    scy: u8,  // Vertical scroll register - 0xFF42
-    scx: u8,  // Horizontal scroll register - 0xFF43
-    ly: u8,   // Scanline register - 0xFF44
-              // bg_map_1: [Tile; 0x3FF], // Background Map 1 - 0x9800 - 9x9BFF
-              // bg_map_2: [Tile; 0x3FF], // Background Map 2 - 0x9C00 - 0x9FFF
+    // Memory Map (entirety of VRAM) 0x8000-0x9FFF and 0xFE00-0xFE9F
+    raw_tile_vram: [u8; 384 * 16],
+    pub tile_set: [Tile; 384], // Tile Set Blocks 0-3 - 0x8000-0x97FF
+    bg_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
+    bg_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
+    oam: [[u8; 4]; 40], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
+    // IO Registers 0xFF40-0xFF4B
+    lcdc: u8,         // PPU control register - 0xFF40
+    stat: u8,         // PPU status register - 0xFF41
+    scy: u8,          // Vertical scroll register - 0xFF42
+    scx: u8,          // Horizontal scroll register - 0xFF43
+    pub ly: u8,       // Scanline register - 0xFF44
+    bg_palette: u8,   // Background color palette - 0xFF47
+    ob_palette_1: u8, // Object color palette 1 - 0xFF48
+    ob_palette_2: u8, // Object color palette 2 - 0xFF49
+    wy: u8,           // Window Y position - 0xFF4A
+    wx: u8,           // Window X position - 0xFF4B
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,7 +41,7 @@ pub enum Mode {
     Active = 3,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)] // Debug
 pub enum Pixel {
     White,     // 0b11
     DarkGray,  // 0b10
@@ -40,7 +49,49 @@ pub enum Pixel {
     Black,     // 0b00
 }
 
-type Tile = [[Pixel; 8]; 8];
+impl std::convert::From<Pixel> for Color {
+    fn from(pixel: Pixel) -> Color {
+        match pixel {
+            Pixel::White => Color::RGB(255, 255, 255),
+            Pixel::LightGray => Color::RGB(255, 0, 0),
+            Pixel::DarkGray => Color::RGB(0, 255, 0),
+            Pixel::Black => Color::RGB(0, 0, 0),
+        }
+    }
+}
+impl std::convert::From<Pixel> for u8 {
+    fn from(pixel: Pixel) -> u8 {
+        match pixel {
+            Pixel::White => 0b11,
+            Pixel::LightGray => 0b10,
+            Pixel::DarkGray => 0b01,
+            Pixel::Black => 0b00,
+        }
+    }
+}
+impl std::convert::From<u8> for Pixel {
+    fn from(byte: u8) -> Pixel {
+        match byte {
+            0b11 => Pixel::White,
+            0b10 => Pixel::LightGray,
+            0b01 => Pixel::DarkGray,
+            _ => Pixel::Black,
+        }
+    }
+}
+
+impl fmt::Debug for Pixel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Pixel::White => write!(f, "W"),
+            Pixel::LightGray => write!(f, " "),
+            Pixel::DarkGray => write!(f, "+"),
+            Pixel::Black => write!(f, "B"),
+        }
+    }
+}
+
+pub type Tile = [[Pixel; 8]; 8];
 fn empty_tile() -> Tile {
     [[Pixel::Black; 8]; 8]
 }
@@ -144,13 +195,21 @@ fn empty_tile() -> Tile {
 impl PPU {
     pub fn new() -> Self {
         PPU {
-            vram: [0; VRAM_SIZE],
+            raw_tile_vram: [0; 384 * 16],
             tile_set: [empty_tile(); 384],
+            bg_map_1: [0; 0x3FF + 1],
+            bg_map_2: [0; 0x3FF + 1],
+            oam: [[0; 4]; 40],
             lcdc: 0,
             stat: 0,
             scy: 0,
             scx: 0,
             ly: 0,
+            bg_palette: 0,
+            ob_palette_1: 0,
+            ob_palette_2: 0,
+            wy: 0,
+            wx: 0,
         }
     }
 
@@ -161,7 +220,17 @@ impl PPU {
             0xFF42 => self.scy,
             0xFF43 => self.scx,
             0xFF44 => self.ly,
-            _ => self.vram[index],
+            0xFF47 => self.bg_palette,
+            0xFF48 => self.ob_palette_1,
+            0xFF49 => self.ob_palette_2,
+            0xFF4A => self.wy,
+            0xFF4B => self.wx,
+            0x8000..=0x97FF => self.read_tile_set_data_as_byte(real_addr - 0x8000),
+            0x9800..=0x9BFF => self.bg_map_1[real_addr - 0x9800],
+            0x9C00..=0x9FFF => self.bg_map_2[real_addr - 0x9C00],
+            _ => {
+                panic!("Unsupported VRAM access at byte: {:#X}", real_addr);
+            }
         }
     }
 
@@ -171,12 +240,50 @@ impl PPU {
         // println!("writing to: {:#X} - {:#X}", real_addr, value);
 
         match real_addr {
-            0xFF40 => self.lcdc = value,
-            0xFF41 => self.stat = value,
-            0xFF42 => self.scy = value,
-            0xFF43 => self.scx = value,
-            0xFF44 => self.ly = value,
-            _ => self.vram[index] = value,
+            0xFF40 => {
+                self.lcdc = value;
+            }
+            0xFF41 => {
+                self.stat = value;
+            }
+            0xFF42 => {
+                self.scy = value;
+            }
+            0xFF43 => {
+                self.scx = value;
+            }
+            0xFF44 => {
+                self.ly = value;
+            }
+            0xFF47 => {
+                self.bg_palette = value;
+            }
+            0xFF48 => {
+                self.ob_palette_1 = value;
+            }
+            0xFF49 => {
+                self.ob_palette_2 = value;
+            }
+            0xFF4A => {
+                self.wy = value;
+            }
+            0xFF4B => {
+                self.wx = value;
+            }
+            0x8000..=0x97FF => {
+                self.write_tile_set_data(real_addr - 0x8000, value);
+                //log_vec(Vec::from(self.raw_tile_vram));
+                //log_data(self.tile_set);
+            }
+            0x9800..=0x9BFF => {
+                self.bg_map_1[real_addr - 0x9800] = value;
+            }
+            0x9C00..=0x9FFF => {
+                self.bg_map_2[real_addr - 0x9C00] = value;
+            }
+            _ => {
+                panic!("Unsupported VRAM access at byte: {:#X}", real_addr);
+            }
         };
 
         // Not writing to tile set storage => no need to cache
@@ -184,7 +291,7 @@ impl PPU {
             return;
         }
 
-        // Cache
+        /* Cache
         let first_index = index & 0xFFFE;
 
         let byte1 = self.vram[first_index];
@@ -228,10 +335,52 @@ impl PPU {
 
             self.tile_set[tile_index][row_index][pixel_index] = value;
         }
+        */
+    }
+
+    fn write_tile_set_data(&mut self, index: usize, byte: u8) {
+        self.raw_tile_vram[index] = byte;
+        // A tile is 2 bytes. 1 byte will only populate half the tile, or 4 pixels
+        // Cache
+        let first_index = index & 0xFFFE;
+
+        let byte1 = self.raw_tile_vram[first_index];
+        let byte2 = self.raw_tile_vram[first_index + 1];
+
+        let tile_index = index / 16;
+        let row_index = (index % 16) / 2;
+        for pixel_index in 0..8 {
+            let mask = 1 << (7 - pixel_index);
+            let lsb = byte1 & mask;
+            let msb = byte2 & mask;
+            let value = match (lsb != 0, msb != 0) {
+                (true, true) => Pixel::White,
+                (false, true) => Pixel::DarkGray,
+                (true, false) => Pixel::LightGray,
+                (false, false) => Pixel::Black,
+            };
+
+            self.tile_set[tile_index][row_index][pixel_index] = value;
+        }
+    }
+
+    fn read_tile_set_data_as_byte(&self, index: usize) -> u8 {
+        /*
+        let tile_no = index / 16;
+        let pixel_no = (index % 16) / 2;
+        let result = (self.tile_set[tile_no][pixel_no][pixel_no] as u8) << 6
+            | (self.tile_set[tile_no][pixel_no][pixel_no + 1] as u8) << 4
+            | (self.tile_set[tile_no][pixel_no][pixel_no + 2] as u8) << 2
+            | self.tile_set[tile_no][pixel_no][pixel_no + 3] as u8;
+
+        result
+        */
+        self.raw_tile_vram[index]
     }
 
     pub fn enable_lcd(&mut self, bus: &mut Bus) {
-        bus.ram.ram[0xFF40] = 0b1010000 | self.vram[0xFF40];
+        self.lcdc |= 0b1010000;
+        //bus.ram.ram[0xFF40] = 0b1010000 | self.vram[0xFF40];
     }
 
     fn get_address_mode(&self) -> u16 {
@@ -241,33 +390,27 @@ impl PPU {
         }
     }
 
-    fn get_tile(&self, id: u16) -> Tile {
-        match self.get_address_mode() {
-            0x8800 => {
-                let idx = id as i16;
-                self.tile_set[(192 + id as i16) as usize]
-            }
-            0x8000 => self.tile_set[id as usize],
-            _ => panic!("Unsupported address mode!"),
-        }
-    }
-
-    fn get_background_map(&self) -> [Tile; 1024] {
+    fn get_background_map(&self) -> [Tile; 320] {
         //println!("SCX: {:#X}, SCY: {:#X}", self.scx, self.scy);
 
-        let bg_map_address: usize = match self.lcdc & 0x8 {
-            0 => 0x9800,
-            _ => 0x9C00,
+        let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
+            0 => &self.bg_map_1,
+            _ => &self.bg_map_2,
         };
-        let mut tiles: [Tile; 1024] = [empty_tile(); 1024];
+        let mut tiles: [Tile; 320] = [empty_tile(); 320];
         // Background consists of 32x32 tiles, or 256x256 pixels
         // The viewport (Game Boy screen) can only show 20x18 tiles (160x144 pixels)
         let starting_offset = (self.scx + self.scy * 20) as usize;
-        let start_index: usize = (bg_map_address + starting_offset) - 0x8000;
-        let end_index: usize = start_index + (20 * 18) + 1;
+        let start_index: usize = starting_offset;
+        let end_index: usize = start_index + (20 * 16);
 
-        for (i, tile_id) in self.vram[start_index..=end_index].iter().enumerate() {
-            tiles[i] = self.get_tile(*tile_id as u16);
+        for (i, tile_id) in bg_map[start_index..end_index].iter().enumerate() {
+            //tiles[i] = self.get_tile(*tile_id as u16);
+            tiles[i] = match self.get_address_mode() {
+                0x8000 => self.tile_set[*tile_id as usize],
+                _ => self.tile_set[192 + (*tile_id as i8) as usize],
+            };
+            //tiles[i] = self.tile_set[*tile_id as usize];
             //println!("tile data: {:?}", tiles[i]);
             //println!("tile {:#X}", *tile_id);
         }
@@ -285,18 +428,65 @@ impl PPU {
 
         let mut buffer = [[Pixel::White; SCREEN_WIDTH]; SCREEN_HEIGHT];
 
-        for (tile_index, tile) in self.get_background_map().iter().enumerate() {
+        for (tile_index, tile_data) in self.get_background_map().iter().enumerate() {
             let x = tile_index % 20;
             let y = tile_index / 20;
-            for dx in 0..8 {
-                for dy in 0..8 {
+            for dy in 0..8 {
+                for dx in 0..8 {
                     // (y + dy) * 160 + (x + dx) * 8
-                    buffer[y + dy][x + dx] = Pixel::LightGray; //tile[dy][dx];
-                                                               //println!("writing tile data: {:?}", tile[dy][dx]);
+                    buffer[y + dy][x + dx] = tile_data[dy][dx];
+                    //println!("writing tile data: {:?}", tile[dy][dx]);
                 }
             }
         }
 
         buffer
     }
+
+    pub fn log_tileset(&self) {
+        for i in 0..32 * 32 {
+            let tile_id = self.bg_map_1[i];
+            let tile = match self.get_address_mode() {
+                0x8000 => self.tile_set[tile_id as usize],
+                _ => self.tile_set[192 + (tile_id as i8) as usize],
+            };
+            log(format!("{:?}", tile));
+        }
+        log(format!(
+            "------------------------------------------------------"
+        ));
+        for i in 0..32 * 32 {
+            let tile_id = self.bg_map_2[i];
+            let tile = match self.get_address_mode() {
+                0x8000 => self.tile_set[tile_id as usize],
+                _ => self.tile_set[192 + (tile_id as i8) as usize],
+            };
+            log(format!("{:?}", tile));
+        }
+    }
+}
+
+fn log(s: String) {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(true)
+        .open("gb-vram-log")
+        .unwrap();
+
+    if let Err(e) = writeln!(file, "{}", s) {
+        eprintln!("Couldn't write to file: {}", e);
+    }
+}
+
+fn log_vec(vec: Vec<u8>) {
+    log(format!("{:?}", vec));
+    log(format!("\n"));
+}
+
+pub fn log_data(tile_set: [Tile; 384]) {
+    for tile in tile_set.iter() {
+        print!("{:?}\n", tile);
+    }
+    println!("--------------------------------\n");
 }

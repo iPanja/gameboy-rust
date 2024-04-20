@@ -11,8 +11,9 @@ use sdl2::video::Window;
 use std::fs::File;
 use std::io::Read;
 use std::{env, fs};
+use std::{fs::OpenOptions, io::prelude::*};
 
-const SCALE: u32 = 2;
+const SCALE: u32 = 4;
 const SCREEN_WIDTH: usize = 160;
 const SCREEN_HEIGHT: usize = 144;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
@@ -25,21 +26,6 @@ fn draw_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
     canvas.clear();
 
     let screen_buf = emu.get_display();
-
-    // Set draw color to white, and update screen
-    canvas.set_draw_color(Color::RGB(255, 255, 255));
-    /*
-    for (i, pixel) in screen_buf.iter().enumerate() {
-        if *pixel != Pixel::White {
-            // True => draw as white pixel
-            let x = (i % SCREEN_WIDTH) as u32;
-            let y = (i / SCREEN_WIDTH) as u32;
-
-            // Draw a rectangle at (x, y) scaled up by SCALE value
-            let rect = Rect::new((x * SCALE) as i32, (y * SCALE) as i32, SCALE, SCALE);
-            canvas.fill_rect(rect).unwrap()
-        }
-    }*/
 
     for (y, row) in screen_buf.iter().enumerate() {
         for (x, pixel) in row.iter().enumerate() {
@@ -58,7 +44,12 @@ fn draw_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
                 }
             }
 
-            let rect = Rect::new((x as u32 * SCALE) as i32, (y as u32 * SCALE) as i32, SCALE, SCALE);
+            let rect = Rect::new(
+                (x as u32 * SCALE) as i32,
+                (y as u32 * SCALE) as i32,
+                SCALE,
+                SCALE,
+            );
             canvas.fill_rect(rect).unwrap()
         }
     }
@@ -78,7 +69,7 @@ fn main() {
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = File::open("../roms/01-special.gb").expect("INVALID ROM");
+    let mut rom = File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
@@ -122,11 +113,21 @@ fn main() {
 
         for _ in 0..TICKS_PER_FRAME {
             gameboy.tick();
-            draw_screen(&mut gameboy, &mut canvas);
+            //draw_screen(&mut gameboy, &mut canvas);
+            println!("ly: {}", gameboy.bus.ppu.ly);
         }
         //tick_timers();
 
         draw_screen(&mut gameboy, &mut canvas);
+        //if gameboy.cpu.registers.pc >= 0x100 {
+        if gameboy.bus.ppu.ly > 100 {
+            //log_data(gameboy.bus.ppu.tile_set);
+            gameboy.bus.ppu.log_tileset();
+        }
+
+        if gameboy.cpu.registers.pc > 0x100 {
+            panic!("a");
+        }
     }
 
     /*
@@ -134,4 +135,24 @@ fn main() {
         gameboy.tick();
     }
     */
+}
+
+pub fn log_data(tile_set: [gameboy::ppu::Tile; 384]) {
+    for tile in tile_set.iter() {
+        //print!("{:?}\n", tile);
+        log(format!("{:?}", tile));
+    }
+    log(format!("--------------------------------\n"));
+}
+fn log(s: String) {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(true)
+        .open("gb-vram-log")
+        .unwrap();
+
+    if let Err(e) = writeln!(file, "{}", s) {
+        eprintln!("Couldn't write to file: {}", e);
+    }
 }
