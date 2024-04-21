@@ -390,32 +390,27 @@ impl PPU {
         }
     }
 
-    fn get_background_map(&self) -> [Tile; 320] {
+    fn get_background_map(&self, buffer: &mut [Tile; 360]){
         //println!("SCX: {:#X}, SCY: {:#X}", self.scx, self.scy);
 
         let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
             0 => &self.bg_map_1,
             _ => &self.bg_map_2,
         };
-        let mut tiles: [Tile; 320] = [empty_tile(); 320];
+        *buffer = [empty_tile(); 20*18];
         // Background consists of 32x32 tiles, or 256x256 pixels
         // The viewport (Game Boy screen) can only show 20x18 tiles (160x144 pixels)
-        let starting_offset = (self.scx + self.scy * 20) as usize;
-        let start_index: usize = starting_offset;
-        let end_index: usize = start_index + (20 * 16);
+        let start_index = (self.scx + self.scy * 20) as usize;
+        let end_index: usize = start_index + (20 * 18);
 
         for (i, tile_id) in bg_map[start_index..end_index].iter().enumerate() {
-            //tiles[i] = self.get_tile(*tile_id as u16);
-            tiles[i] = match self.get_address_mode() {
+            buffer[i] = match self.get_address_mode() {
                 0x8000 => self.tile_set[*tile_id as usize],
-                _ => self.tile_set[192 + (*tile_id as i8) as usize],
+                _ => {
+                    self.tile_set[(*tile_id as i8 as i16 + 128) as usize]
+                },
             };
-            //tiles[i] = self.tile_set[*tile_id as usize];
-            //println!("tile data: {:?}", tiles[i]);
-            //println!("tile {:#X}", *tile_id);
         }
-
-        tiles
     }
 
     pub fn get_display(
@@ -423,45 +418,65 @@ impl PPU {
         bus: &Bus,
         scx: u8,
         scy: u8,
-    ) -> [[Pixel; SCREEN_WIDTH]; SCREEN_HEIGHT] {
-        //self.enable_lcd();
+        buffer: &mut [[Pixel; 20*8]; 18*8]
+    ) {
+        let mut tile_buffer: [Tile; 360] = [empty_tile(); 360];
+        self.get_background_map(&mut tile_buffer);
 
-        let mut buffer = [[Pixel::White; SCREEN_WIDTH]; SCREEN_HEIGHT];
-
-        for (tile_index, tile_data) in self.get_background_map().iter().enumerate() {
-            let x = tile_index % 20;
-            let y = tile_index / 20;
+        for (i, tile_data) in tile_buffer.iter().enumerate() {
+            let start_row = (i / 20) * 8;
+            let start_col = (i*8) % (20*8);
+            //println!("{}, {}", start_row, start_col);
             for dy in 0..8 {
                 for dx in 0..8 {
-                    // (y + dy) * 160 + (x + dx) * 8
-                    buffer[y + dy][x + dx] = tile_data[dy][dx];
-                    //println!("writing tile data: {:?}", tile[dy][dx]);
+                    buffer[start_row + dy][start_col + dx] = tile_data[dy][dx];
                 }
             }
         }
 
-        buffer
     }
 
-    pub fn log_tileset(&self) {
-        for i in 0..32 * 32 {
-            let tile_id = self.bg_map_1[i];
-            let tile = match self.get_address_mode() {
-                0x8000 => self.tile_set[tile_id as usize],
-                _ => self.tile_set[192 + (tile_id as i8) as usize],
-            };
-            log(format!("{:?}", tile));
+    pub fn get_debug_display(&self, buffer: &mut [[Pixel; 16*8]; 32*8]) {
+        let mut tile_no = 0;
+
+        for tile_y in 0..24 {
+            for tile_x in 0..16 {
+                let start_y = tile_y * 8;
+                let start_x = tile_x * 8;
+                
+                /*
+                let tile_set_index = tile_no * 16;
+                for byte_start in 0..8 {
+                    let byte1 = self.raw_tile_vram[tile_set_index + byte_start*2];
+                    let byte2 = self.raw_tile_vram[tile_set_index + byte_start*2 + 1];
+                    
+                    for bit in 0..8 {
+                        let mask = 0b10000000 >> bit;
+                        let msb = (byte1 & mask) >> 7-bit;
+                        let lsb = (byte2 & mask) >> 7-bit;
+                        let pixel = Pixel::from((msb << 1) | lsb);
+                        buffer[start_y + byte_start][start_x + bit] = pixel;
+                    }
+                }
+                */
+                let tile: Tile = self.tile_set[tile_no];
+                for (dy, row) in tile.iter().enumerate() {
+                    for (dx, pixel) in row.iter().enumerate() {
+                        buffer[start_y + dy][start_x + dx] = *pixel;
+                    }
+                }
+
+                tile_no += 1;
+            }
         }
-        log(format!(
-            "------------------------------------------------------"
-        ));
-        for i in 0..32 * 32 {
-            let tile_id = self.bg_map_2[i];
-            let tile = match self.get_address_mode() {
-                0x8000 => self.tile_set[tile_id as usize],
-                _ => self.tile_set[192 + (tile_id as i8) as usize],
-            };
-            log(format!("{:?}", tile));
+    }
+
+    pub fn load_tile_data(&self, tile_no: usize, buffer: &mut Tile) {
+        let tile: Tile = self.tile_set[tile_no];
+        for (dy, row) in tile.iter().enumerate() {
+            for (dx, pixel) in row.iter().enumerate() {
+                buffer[dy][dx] = *pixel;
+            }
         }
     }
 }

@@ -95,9 +95,9 @@ impl Bus {
             println!("Serial Port: {}", result);
 
             if result.contains("Failed") {
-                panic!("Test failed!");
+                //panic!("Test failed!");
             } else if result.contains("Passed") {
-                std::process::exit(0);
+                //std::process::exit(0);
             }
         }
     }

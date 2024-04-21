@@ -46,18 +46,27 @@ impl GameBoy {
     }
 
     pub fn enable_display(&mut self) {
-        self.bus.ram.ram[0xFF44] = 0x90;
-        self.bus.ram.ram[0xFF40] = 0b1010000;
-        self.bus.ram.ram[0xFF42] = 0;
+        self.bus.ram_write_byte(0xFF44, 0x90); //[0xFF44] = 0x90;
+        self.bus.ram_write_byte(0xFF40, 0b1010000); //[0xFF40] = 0b1010000;
+        self.bus.ram_write_byte(0xFF42, 0); //[0xFF42] = 0;
     }
 
-    pub fn get_display(&mut self) -> [[crate::Pixel; SCREEN_WIDTH]; SCREEN_HEIGHT] {
-        self.bus.ram.ram[0xFF44] = 0x90; //min(self.bus.ram.ram[0xFF40] + 1, 144);
+    pub fn get_display(&mut self, buffer: &mut [[crate::Pixel; SCREEN_WIDTH]; SCREEN_HEIGHT]) {
+        //self.bus.ram.ram[0xFF44] = 0x90; //min(self.bus.ram.ram[0xFF40] + 1, 144);
+        //self.bus.ram_write_byte(0xFF44, 0x90);
+        self.enable_display();
 
         self.bus.ppu.get_display(
             &self.bus,
             self.bus.ram_read_byte(0xFF43),
             self.bus.ram_read_byte(0xFF42),
+            buffer
         )
+    }
+
+    pub fn get_debug_display(&mut self, buffer: &mut [[crate::Pixel; 16 * 8]; 32 * 8]) {
+        self.bus.ram.ram[0xFF44] = 0x90; //min(self.bus.ram.ram[0xFF40] + 1, 144);
+
+        self.bus.ppu.get_debug_display(buffer);
     }
 }
