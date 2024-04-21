@@ -7,6 +7,7 @@ pub mod memory;
 pub mod ppu;
 pub mod register;
 pub mod timer;
+pub mod ui;
 
 pub use bus::Bus;
 pub use cpu::CPU;

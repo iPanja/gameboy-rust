@@ -29,7 +29,7 @@ impl GameBoy {
             let _cycles = self.cpu.tick(&mut self.bus);
             current_frame_cycles += _cycles as f64;
             self.bus.tick(_cycles);
-            // ppu
+            // TICK PPU
 
             self.bus.timer.raise_interrupt = match self.bus.timer.raise_interrupt {
                 None => None,
