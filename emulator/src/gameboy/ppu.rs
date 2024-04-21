@@ -15,7 +15,7 @@ pub struct PPU {
     pub tile_set: [Tile; 384], // Tile Set Blocks 0-3 - 0x8000-0x97FF
     bg_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
     bg_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
-    oam: [[u8; 4]; 40], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
+    raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
     // IO Registers 0xFF40-0xFF4B
     lcdc: u8,         // PPU control register - 0xFF40
     stat: u8,         // PPU status register - 0xFF41
@@ -199,7 +199,7 @@ impl PPU {
             tile_set: [empty_tile(); 384],
             bg_map_1: [0; 0x3FF + 1],
             bg_map_2: [0; 0x3FF + 1],
-            oam: [[0; 4]; 40],
+            raw_oam: [0; 0xA0],
             lcdc: 0,
             stat: 0,
             scy: 0,
@@ -228,6 +228,7 @@ impl PPU {
             0x8000..=0x97FF => self.read_tile_set_data_as_byte(real_addr - 0x8000),
             0x9800..=0x9BFF => self.bg_map_1[real_addr - 0x9800],
             0x9C00..=0x9FFF => self.bg_map_2[real_addr - 0x9C00],
+            0xFE00..=0xFE9F => self.raw_oam[real_addr - 0xFE00],
             _ => {
                 panic!("Unsupported VRAM access at byte: {:#X}", real_addr);
             }
@@ -281,6 +282,7 @@ impl PPU {
             0x9C00..=0x9FFF => {
                 self.bg_map_2[real_addr - 0x9C00] = value;
             }
+            0xFE00..=0xFE9F => self.raw_oam[real_addr - 0xFE00] = value,
             _ => {
                 panic!("Unsupported VRAM access at byte: {:#X}", real_addr);
             }
@@ -390,14 +392,14 @@ impl PPU {
         }
     }
 
-    fn get_background_map(&self, buffer: &mut [Tile; 360]){
+    fn get_background_map(&self, buffer: &mut [Tile; 360]) {
         //println!("SCX: {:#X}, SCY: {:#X}", self.scx, self.scy);
 
         let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
             0 => &self.bg_map_1,
             _ => &self.bg_map_2,
         };
-        *buffer = [empty_tile(); 20*18];
+        *buffer = [empty_tile(); 20 * 18];
         // Background consists of 32x32 tiles, or 256x256 pixels
         // The viewport (Game Boy screen) can only show 20x18 tiles (160x144 pixels)
         let start_index = (self.scx + self.scy * 20) as usize;
@@ -406,26 +408,18 @@ impl PPU {
         for (i, tile_id) in bg_map[start_index..end_index].iter().enumerate() {
             buffer[i] = match self.get_address_mode() {
                 0x8000 => self.tile_set[*tile_id as usize],
-                _ => {
-                    self.tile_set[(*tile_id as i8 as i16 + 128) as usize]
-                },
+                _ => self.tile_set[(*tile_id as i8 as i16 + 128) as usize],
             };
         }
     }
 
-    pub fn get_display(
-        &self,
-        bus: &Bus,
-        scx: u8,
-        scy: u8,
-        buffer: &mut [[Pixel; 20*8]; 18*8]
-    ) {
+    pub fn get_display(&self, bus: &Bus, scx: u8, scy: u8, buffer: &mut [[Pixel; 20 * 8]; 18 * 8]) {
         let mut tile_buffer: [Tile; 360] = [empty_tile(); 360];
         self.get_background_map(&mut tile_buffer);
 
         for (i, tile_data) in tile_buffer.iter().enumerate() {
             let start_row = (i / 20) * 8;
-            let start_col = (i*8) % (20*8);
+            let start_col = (i * 8) % (20 * 8);
             //println!("{}, {}", start_row, start_col);
             for dy in 0..8 {
                 for dx in 0..8 {
@@ -433,23 +427,22 @@ impl PPU {
                 }
             }
         }
-
     }
 
-    pub fn get_debug_display(&self, buffer: &mut [[Pixel; 16*8]; 32*8]) {
+    pub fn get_debug_display(&self, buffer: &mut [[Pixel; 16 * 8]; 32 * 8]) {
         let mut tile_no = 0;
 
         for tile_y in 0..24 {
             for tile_x in 0..16 {
                 let start_y = tile_y * 8;
                 let start_x = tile_x * 8;
-                
+
                 /*
                 let tile_set_index = tile_no * 16;
                 for byte_start in 0..8 {
                     let byte1 = self.raw_tile_vram[tile_set_index + byte_start*2];
                     let byte2 = self.raw_tile_vram[tile_set_index + byte_start*2 + 1];
-                    
+
                     for bit in 0..8 {
                         let mask = 0b10000000 >> bit;
                         let msb = (byte1 & mask) >> 7-bit;

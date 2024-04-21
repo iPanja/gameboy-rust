@@ -19,7 +19,7 @@ impl Bus {
 
     pub fn ram_read_byte(&self, address: u16) -> u8 {
         if 0xE000 <= address && address <= 0xFDFF {
-            println!("reading echo ram");
+            //println!("reading echo ram");
         }
 
         match address {
@@ -91,6 +91,7 @@ impl Bus {
             self.ram_write_byte(0xFF02, 0);
 
             // Print
+            /*
             let result: String = self.dbg.iter().collect();
             println!("Serial Port: {}", result);
 
@@ -99,6 +100,7 @@ impl Bus {
             } else if result.contains("Passed") {
                 //std::process::exit(0);
             }
+            */
         }
     }
 }

@@ -44,9 +44,9 @@ impl CPU {
             hex16(self.registers.sp),
             hex16(self.registers.pc),
             hex8(bus.ram_read_byte(self.registers.pc)),
-            hex8(bus.ram_read_byte(self.registers.pc + 1)),
-            hex8(bus.ram_read_byte(self.registers.pc + 2)),
-            hex8(bus.ram_read_byte(self.registers.pc + 3))
+            hex8(bus.ram_read_byte(self.registers.pc.wrapping_add(1))),
+            hex8(bus.ram_read_byte(self.registers.pc.wrapping_add(2))),
+            hex8(bus.ram_read_byte(self.registers.pc.wrapping_add(3)))
         ));
     }
 
@@ -67,13 +67,14 @@ impl CPU {
             self.is_halted = false;
             if !self.interrupts_enabled {
                 // BUG
-                println!("\thalt bug!");
+                //println!("\thalt bug!");
                 return 1;
                 self.registers.pc -= 1;
             }
         }
 
         if self.is_halted {
+            //println!("halted!");
             return 4;
         }
 
@@ -97,6 +98,8 @@ impl CPU {
                 // Some interrupt flag is enabled
                 self.interrupt_action = None;
                 self.interrupts_enabled = false; // Disable interrupt until this one is completed (changed upon completion, in RETI call)
+                                                 //println!("{:#X}", ifr);
+                                                 //println!("{:#X}\n", ier);
 
                 // Handled in order of priority
                 if triggers & 0x1 == 0x1 {
@@ -131,7 +134,7 @@ impl CPU {
     pub fn step(&mut self, bus: &mut Bus) -> u8 {
         let opcode = bus.ram_read_byte(self.registers.pc);
         //println!("instruction {:#X}: {:#X}", self.registers.pc, opcode);
-        self.registers.pc += 1;
+        self.registers.pc = self.registers.pc.wrapping_add(1);
 
         let cycles: u8 = match opcode {
             // FORMAT 0x00 => { statement ; clock_cycles }

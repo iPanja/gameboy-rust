@@ -138,6 +138,8 @@ fn main() {
     debug_canvas.present();
     //}
 
+    draw_screen(&mut gameboy, &mut canvas);
+
     let mut event_pump = sdl_context.event_pump().unwrap();
     'gameloop: loop {
         for event in event_pump.poll_iter() {
