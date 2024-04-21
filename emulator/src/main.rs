@@ -1,17 +1,13 @@
 mod gameboy;
 
 use gameboy::ppu::Pixel;
-use gameboy::{cpu, GameBoy, CPU};
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use sdl2::render::Canvas;
-use sdl2::video::Window;
+use gameboy::GameBoy;
+use ggez::glam::*;
+use ggez::graphics::{self, Canvas, Color, Image, ImageFormat};
+use ggez::*;
+use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::{env, fs};
-use std::{fs::OpenOptions, io::prelude::*};
 
 const SCALE: u32 = 2;
 const SCREEN_WIDTH: usize = 160;
@@ -20,174 +16,107 @@ const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
 const TICKS_PER_FRAME: usize = 10;
 
-fn draw_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
-    // Clear canvas as black
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
-    canvas.clear();
-
-    for (y, row) in emu.get_display().iter().enumerate() {
-        for (x, pixel) in row.iter().enumerate() {
-            match pixel {
-                Pixel::White => {
-                    canvas.set_draw_color(Color::RGB(255, 255, 255));
-                }
-                Pixel::LightGray => {
-                    canvas.set_draw_color(Color::RGB(255, 0, 0));
-                }
-                Pixel::DarkGray => {
-                    canvas.set_draw_color(Color::RGB(0, 255, 0));
-                }
-                Pixel::Black => {
-                    canvas.set_draw_color(Color::RGB(0, 0, 0));
-                }
-            }
-
-            let rect = Rect::new(
-                (x as u32 * SCALE) as i32,
-                (y as u32 * SCALE) as i32,
-                SCALE,
-                SCALE,
-            );
-            canvas.fill_rect(rect).unwrap()
-        }
-    }
-
-    canvas.present();
-}
-
-fn draw_debug_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
-    // Clear canvas as black
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
-    canvas.clear();
-
-    //emu.get_debug_display();
-
-    for (y, row) in emu.get_debug_display().iter().enumerate() {
-        for (x, pixel) in row.iter().enumerate() {
-            match *pixel {
-                Pixel::White => {
-                    canvas.set_draw_color(Color::RGB(255, 255, 255));
-                }
-                Pixel::LightGray => {
-                    canvas.set_draw_color(Color::RGB(255, 0, 0));
-                }
-                Pixel::DarkGray => {
-                    canvas.set_draw_color(Color::RGB(0, 255, 0));
-                }
-                Pixel::Black => {
-                    canvas.set_draw_color(Color::RGB(0, 0, 0));
-                }
-            }
-
-            let rect = Rect::new(
-                (x as u32 * SCALE) as i32,
-                (y as u32 * SCALE) as i32,
-                SCALE,
-                SCALE,
-            );
-            canvas.fill_rect(rect).unwrap()
-        }
-    }
-
-    canvas.present();
-}
-
 fn main() {
-    // Clear LOG
-    if cpu::IS_DEBUGGING {
-        fs::remove_file("gb-log");
-    }
-
     env::set_var("RUST_BACKTRACE", "1");
     // Read boot ROM file
     let mut bootstrap_buffer: Vec<u8> = Vec::new();
     let mut rom_buffer: Vec<u8> = Vec::new();
-
     let mut bootstrap_rom = File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
     let mut rom = File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
+    // GGEZ
+    let mut state = State {
+        gameboy: GameBoy::new(),
+        dt: std::time::Duration::new(0, 0),
+    };
+
     // Create emulator
-    let mut gameboy = GameBoy::new();
-    gameboy.read_rom(&rom_buffer);
-    gameboy.read_rom(&bootstrap_buffer);
-    gameboy.enable_display();
+    state.gameboy.read_rom(&rom_buffer);
+    state.gameboy.read_rom(&bootstrap_buffer);
+    state.gameboy.enable_display();
 
-    // Setup SDL
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
-    let window = video_subsystem
-        .window("Game Boy Emulator", WINDOW_WIDTH, WINDOW_HEIGHT)
-        .position_centered()
-        .opengl()
+    // GGEZ
+    let c = conf::Conf::new();
+    let (ctx, event_loop) = ContextBuilder::new("gameboy-rust", "Fletcher")
+        .default_conf(c)
         .build()
         .unwrap();
-    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
-    canvas.clear();
-    canvas.present();
 
-    //if IS_DEBUGGING {
-    let debug_window = video_subsystem
-        .window("Game Boy Tile Set Viewer", 16 * 8 * SCALE, 32 * 8 * SCALE)
-        .opengl()
-        .build()
-        .unwrap();
-    let mut debug_canvas = debug_window.into_canvas().present_vsync().build().unwrap();
-    debug_canvas.clear();
-    debug_canvas.present();
-    //}
+    event::run(ctx, event_loop, state);
+}
 
-    draw_screen(&mut gameboy, &mut canvas);
+struct State {
+    gameboy: GameBoy,
+    dt: std::time::Duration,
+}
+impl ggez::event::EventHandler<GameError> for State {
+    fn update(&mut self, ctx: &mut Context) -> GameResult {
+        self.dt = ctx.time.delta();
+        for _ in 0..TICKS_PER_FRAME {
+            self.gameboy.tick();
+        }
+        Ok(())
+    }
 
-    let mut event_pump = sdl_context.event_pump().unwrap();
-    'gameloop: loop {
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => {
-                    break 'gameloop;
-                }
-                _ => (),
+    fn draw(&mut self, ctx: &mut Context) -> GameResult {
+        //println!("Drawing: {:#X}", self.gameboy.cpu.registers.pc);
+        let mut canvas = graphics::Canvas::from_frame(ctx, Color::BLACK);
+
+        /*
+        let dest_point = Vec2::new(10.0, 10.0);
+        let text = graphics::Text::new("Hello, world!").set_scale(48.0).clone();
+        canvas.draw(
+            &text,
+            graphics::DrawParam::from(dest_point).color(Color::from_rgba(192, 128, 64, 255)),
+        );
+        */
+        self.draw_screen(ctx, &mut canvas);
+
+        canvas.finish(ctx)
+        //Ok(())
+    }
+}
+
+impl State {
+    fn draw_screen(&mut self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult<()> {
+        let pixel_buffer: &[[Pixel; 160]; 144] = self.gameboy.get_display();
+        let mut screen_buffer: Vec<u8> = Vec::new();
+        for row in pixel_buffer.iter() {
+            for pixel in row.iter() {
+                let color = Color::from(*pixel);
+
+                screen_buffer.push(color.r as u8);
+                screen_buffer.push(color.g as u8);
+                screen_buffer.push(color.b as u8);
+                screen_buffer.push(color.a as u8);
             }
         }
 
-        for _ in 0..TICKS_PER_FRAME {
-            gameboy.tick();
-            //println!("{:#X}", gameboy.cpu.registers.pc);
-        }
-        //tick_timers();
+        let screen_image = Image::from_pixels(
+            ctx,
+            &screen_buffer.as_slice(),
+            ImageFormat::Rgba8UnormSrgb,
+            SCREEN_WIDTH as u32,
+            SCREEN_HEIGHT as u32,
+        );
 
-        draw_screen(&mut gameboy, &mut canvas);
-        draw_debug_screen(&mut gameboy, &mut debug_canvas);
-    }
+        /*
+        let mut screen_image = Image::from_color(
+            ctx,
+            SCREEN_WIDTH as u32,
+            SCREEN_HEIGHT as u32,
+            Some(Color::WHITE),
+        );
+        */
 
-    /*
-    loop {
-        gameboy.tick();
-    }
-    */
-}
+        let dest_point = Vec2::new(10.0, 10.0);
+        canvas.draw(
+            &screen_image,
+            graphics::DrawParam::from(dest_point).scale(Vec2::new(SCALE as f32, SCALE as f32)),
+        );
 
-pub fn log_data(tile_set: [gameboy::ppu::Tile; 384]) {
-    for tile in tile_set.iter() {
-        //print!("{:?}\n", tile);
-        log(format!("{:?}", tile));
-    }
-    log(format!("--------------------------------\n"));
-}
-fn log(s: String) {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .append(true)
-        .open("gb-vram-log")
-        .unwrap();
-
-    if let Err(e) = writeln!(file, "{}", s) {
-        eprintln!("Couldn't write to file: {}", e);
+        Ok(())
     }
 }

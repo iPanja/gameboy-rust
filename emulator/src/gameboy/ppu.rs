@@ -1,4 +1,5 @@
-use sdl2::pixels::Color;
+use ggez::graphics::Color;
+//use sdl2::pixels::Color;
 use std::{fmt, fs::OpenOptions, io::prelude::*};
 
 use crate::{SCREEN_HEIGHT, SCREEN_WIDTH};
@@ -54,10 +55,10 @@ pub enum Pixel {
 impl std::convert::From<Pixel> for Color {
     fn from(pixel: Pixel) -> Color {
         match pixel {
-            Pixel::White => Color::RGB(255, 255, 255),
-            Pixel::LightGray => Color::RGB(255, 0, 0),
-            Pixel::DarkGray => Color::RGB(0, 255, 0),
-            Pixel::Black => Color::RGB(0, 0, 0),
+            Pixel::White => Color::from_rgb(255, 255, 255),
+            Pixel::LightGray => Color::from_rgb(255, 0, 0),
+            Pixel::DarkGray => Color::from_rgb(0, 255, 0),
+            Pixel::Black => Color::from_rgb(0, 0, 0),
         }
     }
 }
@@ -81,6 +82,17 @@ impl std::convert::From<u8> for Pixel {
         }
     }
 }
+/*
+impl Pixel {
+    fn get_image_byte(&self) -> u8 {
+        match self {
+            0b11 => Color::WHITE.,
+            0b10 => Pixel::LightGray,
+            0b01 => Pixel::DarkGray,
+            _ => Pixel::Black,
+        }
+    }
+}*/
 
 impl fmt::Debug for Pixel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
