@@ -12,9 +12,9 @@ const TILE_MAP_SIZE: usize = 0x3FF;
 pub struct PPU {
     // Memory Map (entirety of VRAM) 0x8000-0x9FFF and 0xFE00-0xFE9F
     raw_tile_vram: [u8; 384 * 16],
-    pub tile_set: [Tile; 384], // Tile Set Blocks 0-3 - 0x8000-0x97FF
-    bg_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
-    bg_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
+    pub tile_set: [Tile; 384],   // Tile Set Blocks 0-3 - 0x8000-0x97FF
+    tile_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
+    tile_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
     raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
     // IO Registers 0xFF40-0xFF4B
     lcdc: u8,         // PPU control register - 0xFF40
@@ -27,18 +27,20 @@ pub struct PPU {
     ob_palette_2: u8, // Object color palette 2 - 0xFF49
     wy: u8,           // Window Y position - 0xFF4A
     wx: u8,           // Window X position - 0xFF4B
+    // Internal data structures
+    background_fifo: [Pixel; 8],
+    sprite_fifo: [Pixel; 8],
+    bg_x_pc: usize,
+    window_lc: usize,
 }
 
+// https://github.com/Hacktix/GBEDG/blob/master/ppu/index.md#the-concept-of-ppu-modes
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mode {
-    HBlank = 0,
-    VBlank = 1,
-    /// Accessing sprite memory, Sprite attributes RAM [0xfe00, 0xfe9f]
-    /// can't be accessed
-    Prelude = 2,
-    /// Accessing sprite memory and video memory [0x8000, 0x9fff],
-    /// both can't be accessed from CPU
-    Active = 3,
+    HBlank = 0, // Takes place after the current scanline has completed, pads the duration of the line scan to 456 T-Cycles - effectively a pause for the PPU.
+    VBlank = 1, // The psuedo lines (144-153), taking place after the entire screen has been scanned
+    OAM = 2, // Entered at the start of every scanline (except for V-Blank), before pixels are actually drawn to the screen. Renders sprites.
+    Drawing = 3, // Where the PPU transfers pixels to the LCD.
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)] // Debug
@@ -197,8 +199,8 @@ impl PPU {
         PPU {
             raw_tile_vram: [0; 384 * 16],
             tile_set: [empty_tile(); 384],
-            bg_map_1: [0; 0x3FF + 1],
-            bg_map_2: [0; 0x3FF + 1],
+            tile_map_1: [0; 0x3FF + 1],
+            tile_map_2: [0; 0x3FF + 1],
             raw_oam: [0; 0xA0],
             lcdc: 0,
             stat: 0,
@@ -210,6 +212,10 @@ impl PPU {
             ob_palette_2: 0,
             wy: 0,
             wx: 0,
+            background_fifo: [Pixel::White; 8],
+            sprite_fifo: [Pixel::White; 8],
+            bg_x_pc: 0,
+            window_lc: 0,
         }
     }
 
@@ -226,8 +232,8 @@ impl PPU {
             0xFF4A => self.wy,
             0xFF4B => self.wx,
             0x8000..=0x97FF => self.read_tile_set_data_as_byte(real_addr - 0x8000),
-            0x9800..=0x9BFF => self.bg_map_1[real_addr - 0x9800],
-            0x9C00..=0x9FFF => self.bg_map_2[real_addr - 0x9C00],
+            0x9800..=0x9BFF => self.tile_map_1[real_addr - 0x9800],
+            0x9C00..=0x9FFF => self.tile_map_2[real_addr - 0x9C00],
             0xFE00..=0xFE9F => self.raw_oam[real_addr - 0xFE00],
             _ => {
                 panic!("Unsupported VRAM access at byte: {:#X}", real_addr);
@@ -277,10 +283,10 @@ impl PPU {
                 //log_data(self.tile_set);
             }
             0x9800..=0x9BFF => {
-                self.bg_map_1[real_addr - 0x9800] = value;
+                self.tile_map_1[real_addr - 0x9800] = value;
             }
             0x9C00..=0x9FFF => {
-                self.bg_map_2[real_addr - 0x9C00] = value;
+                self.tile_map_2[real_addr - 0x9C00] = value;
             }
             0xFE00..=0xFE9F => self.raw_oam[real_addr - 0xFE00] = value,
             _ => {
@@ -301,42 +307,6 @@ impl PPU {
 
         let tile_index = index / 16;
         let row_index = (index % 16) / 2;
-        for pixel_index in 0..8 {
-            // To determine a pixel's value we must first find the corresponding bit that encodes
-            // that pixels value:
-            // 1111_1111
-            // 0123 4567
-            //
-            // As you can see the bit that corresponds to the nth pixel is the bit in the nth
-            // position *from the left*. Bits are normally indexed from the right.
-            //
-            // To find the first pixel (a.k.a pixel 0) we find the left most bit (a.k.a bit 7). For
-            // the second pixel (a.k.a pixel 1) we first the second most left bit (a.k.a bit 6) and
-            // so on.
-            //
-            // We then create a mask with a 1 at that position and 0s everywhere else.
-            //
-            // Bitwise ANDing this mask with our bytes will leave that particular bit with its
-            // original value and every other bit with a 0.
-            let mask = 1 << (7 - pixel_index);
-            let lsb = byte1 & mask;
-            let msb = byte2 & mask;
-
-            // If the masked values are not 0 the masked bit must be 1. If they are 0, the masked
-            // bit must be 0.
-            //
-            // Finally we can tell which of the four tile values the pixel is. For example, if the least
-            // significant byte's bit is 1 and the most significant byte's bit is also 1, then we
-            // have tile value `Three`.
-            let value = match (lsb != 0, msb != 0) {
-                (true, true) => Pixel::White,
-                (false, true) => Pixel::DarkGray,
-                (true, false) => Pixel::LightGray,
-                (false, false) => Pixel::Black,
-            };
-
-            self.tile_set[tile_index][row_index][pixel_index] = value;
-        }
         */
     }
 
@@ -396,8 +366,8 @@ impl PPU {
         //println!("SCX: {:#X}, SCY: {:#X}", self.scx, self.scy);
 
         let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
-            0 => &self.bg_map_1,
-            _ => &self.bg_map_2,
+            0 => &self.tile_map_1,
+            _ => &self.tile_map_2,
         };
         *buffer = [empty_tile(); 20 * 18];
         // Background consists of 32x32 tiles, or 256x256 pixels
@@ -472,6 +442,90 @@ impl PPU {
             }
         }
     }
+
+    fn copy_from_tile_set(&self, tile_id: u8) -> Tile {
+        match self.get_address_mode() {
+            0x8000 => self.tile_set[tile_id as usize],
+            _ => self.tile_set[(tile_id as i8 as i16 + 128) as usize],
+        }
+    }
+
+    fn decode_pixels_from_word(&self, byte1: u8, byte2: u8, buffer: &mut [Pixel; 8]) {
+        for pixel_index in 0..8 {
+            let mask = 1 << (7 - pixel_index);
+            let lsb = byte1 & mask;
+            let msb = byte2 & mask;
+            let value = match (lsb != 0, msb != 0) {
+                (true, true) => Pixel::White,
+                (false, true) => Pixel::DarkGray,
+                (true, false) => Pixel::LightGray,
+                (false, false) => Pixel::Black,
+            };
+
+            buffer[pixel_index] = value;
+        }
+    }
+
+    //
+    //  Pixel FIFI
+    //
+
+    fn fetch_background_fifo(&mut self) {
+        // Each step takes 2 T-Cycles (8 total).
+
+        // Step 1 - Fetch Tile No.
+        // TODO: Determine if rendering window or background - for now I will implement background
+        let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
+            0 => &self.tile_map_1,
+            _ => &self.tile_map_2,
+        };
+
+        let mut tile_index: u8 = bg_map[self.bg_x_pc];
+        self.bg_x_pc = (self.bg_x_pc + 1) % SCREEN_WIDTH;
+
+        // vvv IF NOT FETCHING WINDOW PIXELS vvv
+        tile_index += self.scx / 8;
+        tile_index &= 0x1F; // Wrap around support
+
+        // vvv IF BACKGROUND PIXELS ARE BEING FETCHED vvv
+        tile_index += 32 * (((self.ly + self.scy) & 0xFF) / 8);
+        // OTHERWISE, IF WINDOW PIXELS ARE BEING FETCHED
+        // tile_index += 32 * (WINDOW_LINE_COUNTER / 8)
+
+        //tile_index &= 0x3FF; // Ensure address stays within the tile map
+
+        // Step 2 - Fetch Tile Data (Low)
+        let tile_byte_1: u8 = match self.get_address_mode() {
+            0x8000 => {
+                self.raw_tile_vram[(tile_index * 16 + 2 * ((self.ly + self.scy) % 8)) as usize]
+            }
+            _ => {
+                self.raw_tile_vram[((tile_index as i8 as i16 + 128) * 16
+                    + 2 * ((self.ly + self.scy) % 8) as i16)
+                    as usize]
+            }
+        };
+
+        // Step 3 - Fetch Tile Data (High)
+        let tile_byte_2: u8 = match self.get_address_mode() {
+            0x8000 => {
+                self.raw_tile_vram[(tile_index * 16 + 2 * ((self.ly + self.scy) % 8)) as usize + 1]
+            }
+            _ => {
+                self.raw_tile_vram[((tile_index as i8 as i16 + 128) * 16
+                    + 2 * ((self.ly + self.scy) % 8) as i16)
+                    as usize
+                    + 1]
+            }
+        };
+
+        // Step 4 - Push to FIFO
+        let mut pixel_buffer = [Pixel::White; 8];
+        self.decode_pixels_from_word(tile_byte_1, tile_byte_2, &mut pixel_buffer);
+        self.background_fifo = pixel_buffer;
+    }
+    fn fetch_sprite_fifo(&mut self) {}
+    fn fetch_window_fifo(&mut self) {}
 }
 
 fn log(s: String) {
