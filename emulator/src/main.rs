@@ -13,24 +13,19 @@ use std::io::Read;
 use std::{env, fs};
 use std::{fs::OpenOptions, io::prelude::*};
 
-const SCALE: u32 = 4;
+const SCALE: u32 = 2;
 const SCREEN_WIDTH: usize = 160;
 const SCREEN_HEIGHT: usize = 144;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
 const TICKS_PER_FRAME: usize = 10;
 
-const IS_DEBUGGING: bool = false;
-
 fn draw_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
     // Clear canvas as black
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
-    let mut screen_buf = [[Pixel::Black; 20*8]; 18*8];
-    emu.get_display(&mut screen_buf);
-
-    for (y, row) in screen_buf.iter().enumerate() {
+    for (y, row) in emu.get_display().iter().enumerate() {
         for (x, pixel) in row.iter().enumerate() {
             match pixel {
                 Pixel::White => {
@@ -65,12 +60,9 @@ fn draw_debug_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
-    let mut screen_buf: [[Pixel; 16*8]; 32*8] = [[Pixel::Black; 16*8]; 32*8];
-    emu.get_debug_display(&mut screen_buf);
-
     //emu.get_debug_display();
 
-    for (y, row) in screen_buf.iter().enumerate() {
+    for (y, row) in emu.get_debug_display().iter().enumerate() {
         for (x, pixel) in row.iter().enumerate() {
             match *pixel {
                 Pixel::White => {
@@ -112,8 +104,8 @@ fn main() {
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = File::open("../roms/individual/02-interrupts.gb").expect("INVALID ROM");
-    //bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
+    let mut rom = File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
+    bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
     // Create emulator
@@ -135,16 +127,16 @@ fn main() {
     canvas.clear();
     canvas.present();
 
-    if IS_DEBUGGING {
-        let debug_window = video_subsystem
-            .window("Game Boy Tile Set Viewer", 16 * 8 * SCALE, 32 * 8 * SCALE)
-            .opengl()
-            .build()
-            .unwrap();
-        let mut debug_canvas = debug_window.into_canvas().present_vsync().build().unwrap();
-        debug_canvas.clear();
-        debug_canvas.present();
-    }
+    //if IS_DEBUGGING {
+    let debug_window = video_subsystem
+        .window("Game Boy Tile Set Viewer", 16 * 8 * SCALE, 32 * 8 * SCALE)
+        .opengl()
+        .build()
+        .unwrap();
+    let mut debug_canvas = debug_window.into_canvas().present_vsync().build().unwrap();
+    debug_canvas.clear();
+    debug_canvas.present();
+    //}
 
     let mut event_pump = sdl_context.event_pump().unwrap();
     'gameloop: loop {
@@ -168,9 +160,7 @@ fn main() {
         //tick_timers();
 
         draw_screen(&mut gameboy, &mut canvas);
-        if IS_DEBUGGING {
-            //draw_debug_screen(&mut gameboy, &mut debug_canvas);
-        }
+        draw_debug_screen(&mut gameboy, &mut debug_canvas);
     }
 
     /*

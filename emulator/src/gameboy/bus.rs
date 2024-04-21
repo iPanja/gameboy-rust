@@ -1,7 +1,7 @@
 use super::{Interrupt, Memory, Timer, PPU};
 
 pub struct Bus {
-    pub ram: Memory,
+    ram: Memory,
     pub ppu: PPU,
     pub timer: Timer,
     dbg: Vec<char>,
