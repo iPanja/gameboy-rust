@@ -2,6 +2,7 @@ pub mod bus;
 pub mod cpu;
 pub mod flags_register;
 pub mod gameboy;
+pub mod instruction;
 pub mod interrupt;
 pub mod memory;
 pub mod ppu;
