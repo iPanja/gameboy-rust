@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 sdl2 = "0.34.5"
-imgui = "0.11.0"
+imgui = {version = "0.11.0", features = ["tables-api"]}
 copypasta = "0.8"
 glium = { version = "0.32.1", default-features = true }
 image = "0.23"

@@ -1,26 +1,8 @@
+use gameboy::GameBoy;
+//use imgui::tables;
+use imgui::*;
+
 mod gameboy;
-
-use std::borrow::Cow;
-
-use gameboy::ppu::Pixel;
-use glow::HasContext;
-use imgui::{
-    sys::{ImTextureID, ImVec2, ImVec2_ImVec2_Float},
-    *,
-};
-use imgui_glow_renderer::AutoRenderer;
-use imgui_sdl2_support::SdlPlatform;
-use sdl2::{
-    event::Event,
-    video::{GLProfile, Window},
-};
-
-use glium::{
-    backend::Facade,
-    texture::{ClientFormat, RawImage2d},
-    uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerBehavior},
-    Texture2d,
-};
 
 const SCALE: u32 = 2;
 const SCREEN_WIDTH: usize = 160;
@@ -30,124 +12,99 @@ const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
 const TICKS_PER_FRAME: usize = 10;
 
 fn main() {
-    /* initialize SDL and its video subsystem */
-    let sdl = sdl2::init().unwrap();
-    let video_subsystem = sdl.video().unwrap();
+    // Emulator
+    let mut gameboy = GameBoy::new();
 
-    /* hint SDL to initialize an OpenGL 3.3 core profile context */
-    let gl_attr = video_subsystem.gl_attr();
+    // IMGUI-RS
+    let system = gameboy::ui::init(file!());
 
-    gl_attr.set_context_version(3, 3);
-    gl_attr.set_context_profile(GLProfile::Core);
+    let mut value = 0;
+    let choices = ["test test this is 1", "test test this is 2"];
 
-    /* create a new window, be sure to call opengl method on the builder when using glow! */
-    let window = video_subsystem
-        .window("Game Boy Emulator", 1280, 720)
-        .allow_highdpi()
-        .opengl()
-        .position_centered()
-        //.resizable()
-        .build()
-        .unwrap();
-
-    /* create a new OpenGL context and make it current */
-    let gl_context = window.gl_create_context().unwrap();
-    window.gl_make_current(&gl_context).unwrap();
-
-    /* enable vsync to cap framerate */
-    window.subsystem().gl_set_swap_interval(1).unwrap();
-
-    /* create new glow and imgui contexts */
-    let gl = glow_context(&window);
-
-    /* create context */
-    let mut imgui = Context::create();
-
-    /* disable creation of files on disc */
-    imgui.set_ini_filename(None);
-    imgui.set_log_filename(None);
-
-    /* setup platform and renderer, and fonts to imgui */
-    imgui
-        .fonts()
-        .add_font(&[imgui::FontSource::DefaultFontData { config: None }]);
-
-    /* create platform and renderer */
-    let mut platform = SdlPlatform::init(&mut imgui);
-    let mut renderer = AutoRenderer::initialize(gl, &mut imgui).unwrap();
-
-    /* start main loop */
-    let mut event_pump = sdl.event_pump().unwrap();
-
-    'main: loop {
-        for event in event_pump.poll_iter() {
-            /* pass all events to imgui platfrom */
-            platform.handle_event(&mut imgui, &event);
-
-            if let Event::Quit { .. } = event {
-                break 'main;
-            }
-        }
-
-        /* call prepare_frame before calling imgui.new_frame() */
-        platform.prepare_frame(&mut imgui, &window, &event_pump);
-
-        let ui = imgui.new_frame();
-        /* create imgui UI here */
+    system.main_loop(move |_, ui| {
         ui.show_demo_window(&mut true);
-
-        // DEBUG TILE VIEWER
-        imgui::Image::new(texture_id, [100.0, 100.0]).build(ui);
-
-        ui.window("GB Tile Viewer")
-            .size([192.0, 128.0], imgui::Condition::Always)
+        ui.window("CPU")
+            .size([315.0, 400.0], Condition::FirstUseEver)
             .build(|| {
-                ui.text("GB Tile Viewer");
+                let num_cols = 2;
+                let num_rows = 1000;
+
+                let flags = imgui::TableFlags::ROW_BG
+                    | imgui::TableFlags::RESIZABLE
+                    | imgui::TableFlags::BORDERS_H
+                    | imgui::TableFlags::BORDERS_V; //| imgui::TableFlags::SCROLL_Y;
+
+                if let Some(_t) = ui.begin_table_with_sizing(
+                    "cpu_registers",
+                    2,
+                    flags,
+                    [300.0, 100.0],
+                    /*inner width=*/ 0.0,
+                ) {
+                    // Headers (always visible via freeze)
+                    ui.table_setup_column("Register");
+                    ui.table_setup_column("Value");
+
+                    ui.table_setup_scroll_freeze(num_cols, 1);
+                    ui.table_headers_row();
+
+                    // Data
+                    let registers: [&u16; 10] = [
+                        &(gameboy.cpu.registers.a as u16),
+                        &(gameboy.cpu.registers.b as u16),
+                        &(gameboy.cpu.registers.c as u16),
+                        &(gameboy.cpu.registers.d as u16),
+                        &(gameboy.cpu.registers.e as u16),
+                        &(u8::from(gameboy.cpu.registers.f) as u16),
+                        &(gameboy.cpu.registers.h as u16),
+                        &(gameboy.cpu.registers.l as u16),
+                        &gameboy.cpu.registers.pc,
+                        &gameboy.cpu.registers.sp,
+                    ];
+                    let labels = ["a", "b", "c", "d", "e", "f", "h", "l", "pc", "sp"];
+
+                    let clip = imgui::ListClipper::new(10).begin(ui);
+
+                    for row_num in clip.iter() {
+                        ui.table_next_row();
+                        ui.table_set_column_index(0);
+                        ui.text(format!("{}", labels[row_num as usize]));
+                        ui.table_set_column_index(1);
+                        ui.text(format!("{:#X}", registers[row_num as usize]));
+                    }
+                }
+
+                // Internal registers
+                ui.separator();
+                ui.text(format!("IF REG - {:#X}", gameboy.bus.ram_read_byte(0xFF0F)));
+                ui.text(format!("IE REG - {:#X}", gameboy.bus.ram_read_byte(0xFFFF)));
             });
 
-        /* render */
-        let draw_data = imgui.render();
-
-        unsafe { renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
-        renderer.render(draw_data).unwrap();
-
-        window.gl_swap_window();
-    }
-}
-
-// Create a new glow context.
-fn glow_context(window: &Window) -> glow::Context {
-    unsafe {
-        glow::Context::from_loader_function(|s| window.subsystem().gl_get_proc_address(s) as _)
-    }
-}
-
-fn dummy_texture(gl_ctx: &dyn Facade) {
-    let mut data: Vec<u8> = Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT);
-    for i in 0..SCREEN_WIDTH {
-        for j in 0..SCREEN_HEIGHT {
-            // Insert RGB values
-            data.push(i as u8);
-            data.push(j as u8);
-            data.push((i + j) as u8);
+        /*
+        let mut tab_id: String = String::default();
+        if let Some(_t) = ui.tab_bar(&tab_id) {
+            if let Some(_token) = ui.tab_item("Test") {
+                ui.text("WATP");
+            }
+            if let Some(_token) = ui.tab_item("BEE") {
+                ui.text("WAASDASD");
+            }
+        }*/
+        /*
+        ui.text_wrapped("Hello world!");
+        ui.text_wrapped("こんにちは世界！");
+        if ui.button(choices[value]) {
+            value += 1;
+            value %= 2;
         }
-    }
 
-    let raw = RawImage2d {
-        data: Cow::Owned(data),
-        width: SCREEN_WIDTH as u32,
-        height: SCREEN_HEIGHT as u32,
-        format: ClientFormat::U8U8U8,
-    };
-
-    let gl_texture = Texture2d::new(gl_ctx, raw)?;
-    let texture = Texture {
-        texture: Rc::new(gl_texture),
-        sampler: SamplerBehavior {
-            magnify_filter: MagnifySamplerFilter::Linear,
-            minify_filter: MinifySamplerFilter::Linear,
-            ..Default::default()
-        },
-    };
-    let texture_id = textures.insert(texture);
+        ui.button("This...is...imgui-rs!");
+        ui.separator();
+        let mouse_pos = ui.io().mouse_pos;
+        ui.text(format!(
+            "Mouse Position: ({:.1},{:.1})",
+            mouse_pos[0], mouse_pos[1]
+        ));
+        */
+    });
 }

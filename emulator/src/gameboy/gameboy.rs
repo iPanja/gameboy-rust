@@ -1,5 +1,3 @@
-use std::cmp::min;
-
 use crate::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
 use super::{ppu::Pixel, Bus, CPU, PPU};
@@ -7,8 +5,8 @@ use super::{ppu::Pixel, Bus, CPU, PPU};
 pub struct GameBoy {
     pub cpu: CPU,
     pub bus: Bus,
-    screen: [[crate::Pixel; SCREEN_WIDTH]; SCREEN_HEIGHT],
-    debug_screen: [[crate::Pixel; 16 * 8]; 32 * 8],
+    screen: [[Pixel; SCREEN_WIDTH]; SCREEN_HEIGHT],
+    debug_screen: [[Pixel; 16 * 8]; 32 * 8],
 }
 
 impl GameBoy {
@@ -16,8 +14,8 @@ impl GameBoy {
         GameBoy {
             cpu: CPU::new(),
             bus: Bus::new(),
-            screen: [[crate::Pixel::Black; SCREEN_WIDTH]; SCREEN_HEIGHT],
-            debug_screen: [[crate::Pixel::Black; 128]; 256],
+            screen: [[Pixel::Black; SCREEN_WIDTH]; SCREEN_HEIGHT],
+            debug_screen: [[Pixel::Black; 128]; 256],
         }
     }
 
@@ -55,7 +53,7 @@ impl GameBoy {
         self.bus.ram_write_byte(0xFF42, 0); //[0xFF42] = 0;
     }
 
-    pub fn get_display(&mut self) -> &[[crate::Pixel; SCREEN_WIDTH]; SCREEN_HEIGHT] {
+    pub fn get_display(&mut self) -> &[[Pixel; SCREEN_WIDTH]; SCREEN_HEIGHT] {
         //self.bus.ram.ram[0xFF44] = 0x90; //min(self.bus.ram.ram[0xFF40] + 1, 144);
         //self.bus.ram_write_byte(0xFF44, 0x90);
         self.enable_display();
@@ -70,7 +68,7 @@ impl GameBoy {
         &self.screen
     }
 
-    pub fn get_debug_display(&mut self) -> &[[crate::Pixel; 128]; 256] {
+    pub fn get_debug_display(&mut self) -> &[[Pixel; 128]; 256] {
         //self.bus.ram.ram[0xFF44] = 0x90; //min(self.bus.ram.ram[0xFF40] + 1, 144);
         self.bus.ram_write_byte(0xFF44, 0x90);
         self.bus.ppu.get_debug_display(&mut self.debug_screen);
