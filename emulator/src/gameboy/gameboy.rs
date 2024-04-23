@@ -20,23 +20,37 @@ impl GameBoy {
     }
 
     pub fn tick(&mut self) {
+        self.tick_bp(None);
+    }
+
+    pub fn tick_bp(&mut self, _breakpoints: Option<&Vec<u16>>) {
         self.enable_display(); // TODO: place this somewhere more logical...
         let mut current_frame_cycles: f64 = 0f64;
 
-        while current_frame_cycles < self.bus.timer.get_clock_freq() {
-            let _cycles = self.cpu.tick(&mut self.bus);
-            current_frame_cycles += _cycles as f64;
-            self.bus.tick(_cycles);
-            // TICK PPU
+        let are_breakpoints_enabled = _breakpoints.is_some();
 
-            self.bus.timer.raise_interrupt = match self.bus.timer.raise_interrupt {
-                None => None,
-                Some(x) => {
-                    self.bus.trigger_interrupt(x);
-                    None
-                }
+        while current_frame_cycles < self.bus.timer.get_clock_freq() {
+            current_frame_cycles += self.step();
+            if are_breakpoints_enabled && _breakpoints.unwrap().contains(&self.cpu.registers.pc) {
+                break;
             }
         }
+    }
+
+    pub fn step(&mut self) -> f64 {
+        let _cycles = self.cpu.tick(&mut self.bus);
+        self.bus.tick(_cycles);
+        // TICK PPU
+
+        self.bus.timer.raise_interrupt = match self.bus.timer.raise_interrupt {
+            None => None,
+            Some(x) => {
+                self.bus.trigger_interrupt(x);
+                None
+            }
+        };
+
+        _cycles as f64
     }
 
     pub fn read_rom(&mut self, buffer: &Vec<u8>) {

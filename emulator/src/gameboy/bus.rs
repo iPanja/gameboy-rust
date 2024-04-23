@@ -4,7 +4,7 @@ pub struct Bus {
     ram: Memory,
     pub ppu: PPU,
     pub timer: Timer,
-    dbg: Vec<char>,
+    pub dbg: Vec<char>,
 }
 
 impl Bus {
