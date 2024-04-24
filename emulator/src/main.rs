@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::env;
 use std::error::Error;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::rc::Rc;
 
 use glium::backend::Facade;
@@ -13,6 +13,10 @@ use glium::{Surface, Texture2d};
 use imgui::{Condition, Image, TextureId, Textures, Ui};
 use imgui_glium_renderer::Texture;
 
+mod gameboy;
+
+use gameboy::GameBoy;
+
 const TITLE: &str = "Hello, imgui-rs!";
 const SCALE: u32 = 2;
 const SCREEN_WIDTH: usize = 160;
@@ -23,6 +27,23 @@ const TICKS_PER_FRAME: usize = 10;
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
+    //
+    // Emulator
+    // Read boot ROM file
+    let mut bootstrap_buffer: Vec<u8> = Vec::new();
+    let mut rom_buffer: Vec<u8> = Vec::new();
+
+    let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
+    let mut rom = std::fs::File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
+    bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
+    rom.read_to_end(&mut rom_buffer).unwrap();
+
+    // Create emulator
+    let mut gameboy = GameBoy::new();
+    gameboy.read_rom(&rom_buffer);
+    gameboy.read_rom(&bootstrap_buffer);
+    gameboy.enable_display();
+
     // Common setup for creating a winit window and imgui context, not specifc
     // to this renderer at all except that glutin is used to create the window
     // since it will give us access to a GL context
@@ -78,10 +99,17 @@ fn main() {
                 .expect("Rendering failed");
             target.finish().expect("Failed to swap buffers");
 
-            match dummy_texture(display.get_context(), &mut renderer.textures(), texture_id) {
+            match dummy_texture(
+                display.get_context(),
+                &mut renderer.textures(),
+                texture_id,
+                &mut gameboy,
+            ) {
                 Ok(_id) => texture_id = Some(_id),
                 Err(_e) => println!("{:?}", _e),
             }
+
+            gameboy.tick();
         }
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
@@ -148,8 +176,10 @@ fn dummy_texture(
     gl_ctx: &dyn Facade,
     textures: &mut Textures<Texture>,
     last_texure_id: Option<TextureId>,
+    gameboy: &mut GameBoy,
 ) -> Result<TextureId, Box<dyn Error>> {
     let mut data: Vec<u8> = Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT);
+    /*
     for i in 0..SCREEN_WIDTH {
         for j in 0..SCREEN_HEIGHT {
             // Insert RGB values
@@ -157,7 +187,10 @@ fn dummy_texture(
             data.push(j as u8);
             data.push((i + j) as u8);
         }
-    }
+    }*/
+
+    gameboy.export_display(&mut data);
+
     /*
     let lenna_bytes = include_bytes!("DuhPatrick.jpg");
     let byte_stream = Cursor::new(lenna_bytes.as_ref());

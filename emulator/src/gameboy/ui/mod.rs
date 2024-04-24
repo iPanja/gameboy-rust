@@ -9,6 +9,8 @@ use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::path::Path;
 use std::time::Instant;
 
+use super::GameBoy;
+
 mod clipboard;
 
 pub struct System {
