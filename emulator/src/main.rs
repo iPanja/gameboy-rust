@@ -1,12 +1,19 @@
-use std::{io::Read, thread, time};
+use std::{io::Read, rc::Rc, thread, time};
 
 use gameboy::GameBoy;
+use glium::{
+    backend::Facade,
+    texture::{ClientFormat, RawImage2d},
+    uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerBehavior},
+    Texture2d,
+};
 use image::math::utils::clamp;
 //use imgui::tables;
 use imgui::{
     sys::{ImColor, ImVec2},
     *,
 };
+use imgui_glium_renderer::Texture;
 
 mod gameboy;
 
@@ -35,7 +42,8 @@ fn main() {
     gameboy.enable_display();
 
     // IMGUI-RS
-    let system = gameboy::ui::init(file!());
+    let system = gameboy::ui::init("GB EMU Debugger");
+    let mut my_display = gameboy::ui::rendering::CustomTexturesApp::default();
 
     /// Breakpoints
     let mut selected_breakpoint: i32 = 0;
@@ -322,32 +330,15 @@ fn main() {
                     }
                 }
             });
-        /*
-        let mut tab_id: String = String::default();
-        if let Some(_t) = ui.tab_bar(&tab_id) {
-            if let Some(_token) = ui.tab_item("Test") {
-                ui.text("WATP");
-            }
-            if let Some(_token) = ui.tab_item("BEE") {
-                ui.text("WAASDASD");
-            }
-        }*/
-        /*
-        ui.text_wrapped("Hello world!");
-        ui.text_wrapped("こんにちは世界！");
-        if ui.button(choices[value]) {
-            value += 1;
-            value %= 2;
-        }
 
-        ui.button("This...is...imgui-rs!");
-        ui.separator();
-        let mouse_pos = ui.io().mouse_pos;
-        ui.text(format!(
-            "Mouse Position: ({:.1},{:.1})",
-            mouse_pos[0], mouse_pos[1]
-        ));
-        */
+        ui.window("Display")
+            .size(
+                [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32],
+                Condition::Always,
+            )
+            .resizable(false)
+            .position([5.0, 450.0], Condition::Appearing)
+            .build(|| {});
 
         if should_sleep {
             thread::sleep(sleep_time);
