@@ -18,12 +18,12 @@ pub(crate) fn parse_opcode(
         //
         // LD nn, n
         // A
-        0x06 => (write!(w, "LD B, {}", next_byte), 8, 2),
-        0x0E => (write!(w, "LD C, {}", next_byte), 8, 2),
-        0x16 => (write!(w, "LD D, {}", next_byte), 8, 2),
-        0x1E => (write!(w, "LD D, {}", next_byte), 8, 2),
-        0x26 => (write!(w, "LD D, {}", next_byte), 8, 2),
-        0x2E => (write!(w, "LD D, {}", next_byte), 8, 2),
+        0x06 => (write!(w, "LD B, {:#X}", next_byte), 8, 2),
+        0x0E => (write!(w, "LD C, {:#X}", next_byte), 8, 2),
+        0x16 => (write!(w, "LD D, {:#X}", next_byte), 8, 2),
+        0x1E => (write!(w, "LD D, {:#X}", next_byte), 8, 2),
+        0x26 => (write!(w, "LD D, {:#X}", next_byte), 8, 2),
+        0x2E => (write!(w, "LD D, {:#X}", next_byte), 8, 2),
         // LD r1, r2
         0x7F => (write!(w, "LD A, A",), 4, 1),
         0x78 => (write!(w, "LD A, B",), 4, 1),
@@ -308,9 +308,9 @@ pub(crate) fn parse_opcode(
         // JP nn
         0xC3 => (write!(w, "JP {:#X}", next_word), 12, 3),
         // JP cc, nn
-        0xC2 => (write!(w, "JP NZ, n{:#X}n", next_word), 12, 3),
+        0xC2 => (write!(w, "JP NZ, {:#X}", next_word), 12, 3),
         0xCA => (write!(w, "JP Z, {:#X}", next_word), 12, 3),
-        0xD2 => (write!(w, "JP NC, n{:#X}n", next_word), 12, 3),
+        0xD2 => (write!(w, "JP NC, {:#X}", next_word), 12, 3),
         0xDA => (write!(w, "JP C, {:#X}", next_word), 12, 3),
         // JP (HL)
         0xE9 => (write!(w, "JP (HL)",), 4, 1),

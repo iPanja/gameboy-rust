@@ -11,9 +11,11 @@ use glium::glutin::event_loop::{ControlFlow, EventLoop};
 use glium::texture::{ClientFormat, RawImage2d};
 use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerBehavior};
 use glium::{Surface, Texture2d};
+use imgui::sys::ImVec2;
 use imgui::{
-    CollapsingHeader, ComboBoxFlags, Condition, Id, ImColor32, Image, TableBgTarget,
-    TableColumnFlags, TableColumnSetup, TableFlags, TextureId, Textures, Ui,
+    CollapsingHeader, ComboBoxFlags, Condition, Id, ImColor32, Image, InputText, InputTextFlags,
+    TabBarFlags, TabItem, TableBgTarget, TableColumnFlags, TableColumnSetup, TableFlags, TextureId,
+    Textures, Ui,
 };
 use imgui_glium_renderer::Texture;
 
@@ -25,6 +27,8 @@ const TITLE: &str = "GB Emulator & Debugger";
 const SCALE: u32 = 2;
 const SCREEN_WIDTH: usize = 160;
 const SCREEN_HEIGHT: usize = 144;
+const DEBUGGER_SCREEN_WIDTH: usize = 16 * 8;
+const DEBUGGER_SCREEN_HEIGHT: usize = 32 * 8;
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
 const TICKS_PER_FRAME: usize = 10;
@@ -53,6 +57,9 @@ fn main() {
     // since it will give us access to a GL context
     let (event_loop, display) = create_window();
     let (mut winit_platform, mut imgui_context) = imgui_init(&display);
+    let style_ref = imgui_context.style_mut();
+    style_ref.use_light_colors();
+    style_ref.frame_border_size = 1.0;
 
     // Create renderer from this crate
     let mut renderer = imgui_glium_renderer::Renderer::init(&mut imgui_context, &display)
@@ -66,6 +73,11 @@ fn main() {
         texture_id: None,
         width: SCREEN_WIDTH as f32,
         height: SCREEN_HEIGHT as f32,
+    };
+    let mut gb_debugger_manager: ScreenTextureManager = ScreenTextureManager {
+        texture_id: None,
+        width: DEBUGGER_SCREEN_WIDTH as f32,
+        height: DEBUGGER_SCREEN_HEIGHT as f32,
     };
     // Debugger
     //  > Breakpoints
@@ -100,7 +112,7 @@ fn main() {
                     is_playing = !gameboy.tick_bp(Some(&breakpoints));
                 }
                 if should_sleep & is_playing {
-                    thread::sleep(sleep_time * 5);
+                    thread::sleep(sleep_time);
                 }
             }
 
@@ -117,7 +129,12 @@ fn main() {
             // CREATE UI
             {
                 ui.show_demo_window(&mut true);
-                render_gameboy_window(ui, gb_display_manager);
+                //render_gameboy_window(ui, gb_display_manager, [5.0, 450.0]);
+                render_display_window(
+                    ui,
+                    ["Main Display", "Tile Map"],
+                    [gb_display_manager, gb_debugger_manager],
+                );
                 render_gameboy_registers(ui, &mut gameboy);
                 render_gameboy_instruction_stepper(
                     ui,
@@ -147,12 +164,25 @@ fn main() {
             target.finish().expect("Failed to swap buffers");
 
             // Screen renders
+            // Main display
             let mut gb_display_buffer: Vec<u8> = Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT);
             gameboy.export_display(&mut gb_display_buffer);
             match gb_display_manager.insert_or_update(
                 display.get_context(),
                 &mut renderer.textures(),
                 gb_display_buffer,
+            ) {
+                Ok(_id) => {}
+                Err(_e) => println!("{:?}", _e),
+            }
+            // Tile map
+            let mut gb_debugger_buffer =
+                Vec::with_capacity(DEBUGGER_SCREEN_WIDTH * DEBUGGER_SCREEN_HEIGHT);
+            gameboy.export_debug_display(&mut gb_debugger_buffer);
+            match gb_debugger_manager.insert_or_update(
+                display.get_context(),
+                &mut renderer.textures(),
+                gb_debugger_buffer,
             ) {
                 Ok(_id) => {}
                 Err(_e) => println!("{:?}", _e),
@@ -202,19 +232,26 @@ fn imgui_init(display: &glium::Display) -> (imgui_winit_support::WinitPlatform, 
 }
 
 /*    IMGUI WINDOWS RENDERING    */
-fn render_gameboy_window(ui: &mut Ui, stm: ScreenTextureManager) {
-    ui.window("Display")
+fn render_display_window(ui: &mut Ui, labels: [&str; 2], stms: [ScreenTextureManager; 2]) {
+    ui.window("Displays")
+        .position([5.0, 415.0], Condition::Always)
         .size(
-            [SCREEN_WIDTH as f32 + 15.0, SCREEN_HEIGHT as f32 + 35.0],
+            [
+                SCREEN_WIDTH as f32 + 18.0,
+                DEBUGGER_SCREEN_HEIGHT as f32 + 60.0,
+            ],
             Condition::Appearing,
         )
-        .resizable(false)
-        .position([5.0, 450.0], Condition::Appearing)
+        .resizable(true)
         .build(|| {
-            if let Some(my_texture_id) = stm.texture_id {
-                Image::new(my_texture_id, [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32]).build(ui);
-            } else {
-                ui.text("Failed to load texture");
+            if let Some(_token) =
+                ui.tab_bar_with_flags("DisplayBar", TabBarFlags::AUTO_SELECT_NEW_TABS)
+            {
+                for index in 0..labels.len() {
+                    TabItem::new(labels[index]).build(ui, || {
+                        stms[index].show(ui);
+                    });
+                }
             }
         });
 }
@@ -316,99 +353,105 @@ fn render_gameboy_instruction_stepper(
     tick_rate: &mut i16,
     is_playing: &mut bool,
 ) {
-    ui.window("Instructions")
-        .size([315.0, 700.0], Condition::FirstUseEver)
+    ui.window("Stepper")
+        .size([335.0, 700.0], Condition::FirstUseEver)
         .position([325.0, 5.0], Condition::Always)
         .build(|| {
-            let table_flags = imgui::TableFlags::ROW_BG
-                | imgui::TableFlags::RESIZABLE
-                | imgui::TableFlags::BORDERS_H
-                | imgui::TableFlags::BORDERS_V
-                | TableFlags::SIZING_FIXED_FIT;
+            if CollapsingHeader::new("Instructions")
+                .default_open(true)
+                .build(ui)
+            {
+                let table_flags = imgui::TableFlags::ROW_BG
+                    | imgui::TableFlags::RESIZABLE
+                    | imgui::TableFlags::BORDERS_H
+                    | imgui::TableFlags::BORDERS_V
+                    | TableFlags::SIZING_FIXED_FIT;
 
-            if let Some(_t) = ui.begin_table_header_with_sizing(
-                "cpu_instruction_headers",
-                [
-                    TableColumnSetup {
-                        name: "Addr",
-                        flags: TableColumnFlags::WIDTH_FIXED,
-                        init_width_or_weight: 0.0,
-                        user_id: Id::default(),
-                    },
-                    TableColumnSetup {
-                        name: "OP Code",
-                        flags: TableColumnFlags::WIDTH_FIXED,
-                        init_width_or_weight: 0.0,
-                        user_id: Id::default(),
-                    },
-                    TableColumnSetup {
-                        name: "Instruction",
-                        flags: TableColumnFlags::WIDTH_STRETCH,
-                        init_width_or_weight: 0.0,
-                        user_id: Id::default(),
-                    },
-                    TableColumnSetup {
-                        name: "T-Cycles",
-                        flags: TableColumnFlags::WIDTH_FIXED,
-                        init_width_or_weight: 50.0,
-                        user_id: Id::default(),
-                    },
-                ],
-                table_flags,
-                [0.0, 0.0],
-                0.0,
-            ) {
-                let mut pc_addr = gameboy.cpu.registers.pc.saturating_sub(5);
+                if let Some(_t) = ui.begin_table_header_with_sizing(
+                    "cpu_instruction_headers",
+                    [
+                        TableColumnSetup {
+                            name: "Addr",
+                            flags: TableColumnFlags::WIDTH_FIXED,
+                            init_width_or_weight: 0.0,
+                            user_id: Id::default(),
+                        },
+                        TableColumnSetup {
+                            name: "OP Code",
+                            flags: TableColumnFlags::WIDTH_FIXED,
+                            init_width_or_weight: 0.0,
+                            user_id: Id::default(),
+                        },
+                        TableColumnSetup {
+                            name: "Instruction",
+                            flags: TableColumnFlags::WIDTH_STRETCH,
+                            init_width_or_weight: 0.0,
+                            user_id: Id::default(),
+                        },
+                        TableColumnSetup {
+                            name: "T-Cycles",
+                            flags: TableColumnFlags::WIDTH_FIXED,
+                            init_width_or_weight: 50.0,
+                            user_id: Id::default(),
+                        },
+                    ],
+                    table_flags,
+                    [0.0, 0.0],
+                    0.0,
+                ) {
+                    let mut pc_addr = gameboy.cpu.registers.pc.saturating_sub(5);
 
-                for _ in 0..10 {
-                    let opcode = gameboy.bus.ram_read_byte(pc_addr);
-                    let next_byte = gameboy.bus.ram_read_byte(pc_addr.wrapping_add(1));
-                    let next_word = gameboy.bus.ram_read_word(pc_addr.wrapping_add(1));
+                    for _ in 0..10 {
+                        let opcode = gameboy.bus.ram_read_byte(pc_addr);
+                        let next_byte = gameboy.bus.ram_read_byte(pc_addr.wrapping_add(1));
+                        let next_word = gameboy.bus.ram_read_word(pc_addr.wrapping_add(1));
 
-                    let mut text = format!("");
+                        let mut text = format!("");
 
-                    if let Ok((cycles, bytes_consumed)) =
-                        gameboy::instruction::parse_opcode(opcode, next_byte, next_word, &mut text)
-                    {
-                        /*
-                        for col in 0..3 {
-                            if pc_addr == gameboy.cpu.registers.pc {
-                                ui.table_set_bg_color_with_column(
-                                    TableBgTarget::all(),
-                                    ImColor32::from_rgba(255, 0, 0, 125),
-                                    col,
-                                );
+                        if let Ok((cycles, bytes_consumed)) = gameboy::instruction::parse_opcode(
+                            opcode, next_byte, next_word, &mut text,
+                        ) {
+                            /*
+                            for col in 0..3 {
+                                if pc_addr == gameboy.cpu.registers.pc {
+                                    ui.table_set_bg_color_with_column(
+                                        TableBgTarget::all(),
+                                        ImColor32::from_rgba(255, 0, 0, 125),
+                                        col,
+                                    );
+                                }
                             }
-                        }
-                        */
-                        let text: [String; 4] = [
-                            format!("0x{:04X}", pc_addr),
-                            match bytes_consumed {
-                                1 => format!("{:02X}", opcode),
-                                2 => format!("{:02X}\t{:02X}", opcode, next_byte),
-                                _ => format!("{:02X}\t{:04X}", opcode, next_word),
-                            },
-                            format!("{}", text),
-                            format!("{}", cycles),
-                        ];
+                            */
+                            let text: [String; 4] = [
+                                format!("0x{:04X}", pc_addr),
+                                match bytes_consumed {
+                                    1 => format!("{:02X}", opcode),
+                                    2 => format!("{:02X}\t{:02X}", opcode, next_byte),
+                                    _ => format!("{:02X}\t{:04X}", opcode, next_word),
+                                },
+                                format!("{}", text),
+                                format!("{}", cycles),
+                            ];
 
-                        for col in 0..4 {
-                            ui.table_next_column();
-                            if pc_addr == gameboy.cpu.registers.pc {
-                                ui.table_set_bg_color(
-                                    TableBgTarget::all(),
-                                    ImColor32::from_rgba(255, 0, 0, 125),
-                                );
+                            for col in 0..4 {
+                                ui.table_next_column();
+                                if pc_addr == gameboy.cpu.registers.pc {
+                                    ui.table_set_bg_color(
+                                        TableBgTarget::all(),
+                                        ImColor32::from_rgba(255, 0, 0, 125),
+                                    );
+                                }
+
+                                ui.text(&text[col]);
                             }
 
-                            ui.text(&text[col]);
+                            pc_addr = pc_addr.wrapping_add(bytes_consumed as u16);
                         }
-
-                        pc_addr = pc_addr.wrapping_add(bytes_consumed as u16);
                     }
                 }
             }
 
+            ui.separator();
             // Step/Play Functionality
             {
                 if ui.button("STEP") {
@@ -454,45 +497,51 @@ fn render_gameboy_instruction_stepper(
             ui.separator();
             // Breakpoint Manager
             {
-                let labels: Vec<&str> = breakpoint_labels.iter().map(AsRef::as_ref).collect();
-                ui.set_next_item_width(-1.0);
-                ui.list_box("Breakpoints", selected_breakpoint, &labels, 10);
+                if CollapsingHeader::new("Breakpoints")
+                    .default_open(true)
+                    .build(ui)
+                {
+                    let labels: Vec<&str> = breakpoint_labels.iter().map(AsRef::as_ref).collect();
+                    ui.set_next_item_width(-1.0);
+                    ui.list_box("Breakpoints", selected_breakpoint, &labels, 10);
 
-                if ui.button("-") {
-                    if (*selected_breakpoint as usize) < breakpoints.len() {
-                        breakpoints.remove(*selected_breakpoint as usize);
-                        breakpoint_labels.remove(*selected_breakpoint as usize);
+                    if ui.button("-") {
+                        if (*selected_breakpoint as usize) < breakpoints.len() {
+                            breakpoints.remove(*selected_breakpoint as usize);
+                            breakpoint_labels.remove(*selected_breakpoint as usize);
+                        }
                     }
-                }
-                ui.modal_popup_config("Add Breakpoint")
-                    .always_auto_resize(true)
-                    .build(|| {
-                        ui.input_text("Breakpoint Address", breakpoint_input)
-                            .build();
-                        ui.separator();
+                    ui.modal_popup_config("Add Breakpoint")
+                        .always_auto_resize(true)
+                        .build(|| {
+                            ui.input_text("Breakpoint Address", breakpoint_input)
+                                .hint("0x0100")
+                                .build();
+                            ui.separator();
 
-                        let without_prefix = breakpoint_input.trim_start_matches("0x");
-                        if ui.button_with_size("OK", [120.0, 0.0]) {
-                            let result = u16::from_str_radix(&without_prefix, 16);
-                            if let Ok(addr) = &result {
-                                breakpoints.push(*addr);
-                                breakpoint_labels.push(format!("0x{:04X}", addr));
-                                ui.close_current_popup();
-                            } else if let Err(err) = &result {
-                                ui.text_colored([255.0, 0.0, 0.0, 255.0], "INVALID INPUT!");
-                                println!("{:?}", err);
+                            let without_prefix = breakpoint_input.trim_start_matches("0x");
+                            if ui.button_with_size("OK", [120.0, 0.0]) {
+                                let result = u16::from_str_radix(&without_prefix, 16);
+                                if let Ok(addr) = &result {
+                                    breakpoints.push(*addr);
+                                    breakpoint_labels.push(format!("0x{:04X}", addr));
+                                    ui.close_current_popup();
+                                } else if let Err(err) = &result {
+                                    ui.text_colored([255.0, 0.0, 0.0, 255.0], "INVALID INPUT!");
+                                    println!("{:?}", err);
+                                }
+                                *breakpoint_input = String::with_capacity(32);
                             }
-                            *breakpoint_input = String::with_capacity(32);
-                        }
-                        ui.same_line();
-                        if ui.button_with_size("Cancel", [120.0, 0.0]) {
-                            ui.close_current_popup();
-                        }
-                    });
-                ui.same_line_with_spacing(0.0, 10.0);
-                if ui.button("+") {
-                    ui.open_popup("Add Breakpoint");
-                }
+                            ui.same_line();
+                            if ui.button_with_size("Cancel", [120.0, 0.0]) {
+                                ui.close_current_popup();
+                            }
+                        });
+                    ui.same_line_with_spacing(0.0, 10.0);
+                    if ui.button("+") {
+                        ui.open_popup("Add Breakpoint");
+                    }
+                };
             }
         });
 }

@@ -108,6 +108,25 @@ impl GameBoy {
         }
     }
 
+    pub fn export_debug_display(&mut self, buffer: &mut Vec<u8>) {
+        self.bus.ppu.get_debug_display(&mut self.debug_screen);
+
+        *buffer = Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT);
+        for row in self.debug_screen {
+            for pixel in row {
+                let (r, g, b) = match pixel {
+                    Pixel::White => (255, 255, 255),
+                    Pixel::DarkGray => (255, 0, 0),
+                    Pixel::LightGray => (0, 255, 0),
+                    Pixel::Black => (0, 0, 0),
+                };
+                buffer.push(r);
+                buffer.push(g);
+                buffer.push(b);
+            }
+        }
+    }
+
     pub fn get_debug_display(&mut self) -> &[[Pixel; 128]; 256] {
         //self.bus.ram.ram[0xFF44] = 0x90; //min(self.bus.ram.ram[0xFF40] + 1, 144);
         self.bus.ram_write_byte(0xFF44, 0x90);

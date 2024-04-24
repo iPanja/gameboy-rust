@@ -24,11 +24,11 @@ pub struct ScreenTextureManager {
 }
 
 impl ScreenTextureManager {
-    fn show(&self, ui: &Ui) {
+    pub fn show(&self, ui: &Ui) {
         if let Some(t_id) = self.texture_id {
             Image::new(t_id, [self.width, self.height]).build(ui);
         } else {
-            ui.text("...");
+            ui.text("Failed to load texture");
         }
     }
 
