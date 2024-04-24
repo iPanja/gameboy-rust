@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{io::Read, thread, time};
 
 use gameboy::GameBoy;
 use image::math::utils::clamp;
@@ -44,10 +44,19 @@ fn main() {
     let mut breakpoint_input = String::with_capacity(8);
 
     /// Tick Rate
+    let mut is_playing: bool = false;
     let mut tick_rate: i16 = 5;
+
+    // Sleep rate
+    let should_sleep: bool = true;
+    let sleep_time = time::Duration::from_millis(10);
 
     system.main_loop(move |_, ui| {
         ui.show_demo_window(&mut true);
+
+        if is_playing {
+            gameboy.tick();
+        }
 
         // Registers Window
         ui.window("Registers")
@@ -263,6 +272,11 @@ fn main() {
                             }
                         }
                     }
+
+                    ui.same_line_with_spacing(0.0, 10.0);
+                    if ui.button(if is_playing { "Pause" } else { "Play" }) {
+                        is_playing = !is_playing;
+                    }
                 }
                 ui.separator();
                 // Breakpoint Manager
@@ -334,5 +348,9 @@ fn main() {
             mouse_pos[0], mouse_pos[1]
         ));
         */
+
+        if should_sleep {
+            thread::sleep(sleep_time);
+        }
     });
 }
