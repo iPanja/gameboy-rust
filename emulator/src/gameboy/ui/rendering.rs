@@ -5,10 +5,7 @@ use imgui::{
 use imgui_glium_renderer::Texture;
 use std::{borrow::Cow, error::Error};
 
-use crate::{
-    gameboy::{gameboy, GameBoy},
-    SCREEN_HEIGHT, SCREEN_WIDTH,
-};
+use crate::gameboy::{gameboy, GameBoy};
 
 use std::{io::Read, rc::Rc};
 
@@ -19,184 +16,39 @@ use glium::{
     Texture2d,
 };
 
-#[derive(Default)]
-pub struct CustomTexturesApp {
-    my_texture_id: Option<TextureId>,
-    lenna: Option<Lenna>,
+#[derive(Default, Clone, Copy)]
+pub struct ScreenTextureManager {
+    pub texture_id: Option<TextureId>,
+    pub width: f32,
+    pub height: f32,
 }
 
-impl CustomTexturesApp {
-    pub fn register_textures<F>(
+impl ScreenTextureManager {
+    fn show(&self, ui: &Ui) {
+        if let Some(t_id) = self.texture_id {
+            Image::new(t_id, [self.width, self.height]).build(ui);
+        } else {
+            ui.text("...");
+        }
+    }
+
+    pub fn insert_or_update<F>(
         &mut self,
         gl_ctx: &F,
         textures: &mut Textures<Texture>,
-        //gameboy: &mut GameBoy,
+        data: Vec<u8>,
     ) -> Result<(), Box<dyn Error>>
     where
         F: Facade,
     {
-        const WIDTH: usize = 100;
-        const HEIGHT: usize = 100;
-
-        if self.my_texture_id.is_none() {
-            // Generate dummy texture
-            let mut data = Vec::with_capacity(WIDTH * HEIGHT);
-            for i in 0..WIDTH {
-                for j in 0..HEIGHT {
-                    // Insert RGB values
-                    data.push(i as u8);
-                    data.push(j as u8);
-                    data.push((i + j) as u8);
-                }
-            }
-
-            let raw = RawImage2d {
-                data: Cow::Owned(data),
-                width: WIDTH as u32,
-                height: HEIGHT as u32,
-                format: ClientFormat::U8U8U8,
-            };
-            let gl_texture = Texture2d::new(gl_ctx, raw)?;
-            let texture = Texture {
-                texture: Rc::new(gl_texture),
-                sampler: SamplerBehavior {
-                    magnify_filter: MagnifySamplerFilter::Linear,
-                    minify_filter: MinifySamplerFilter::Linear,
-                    ..Default::default()
-                },
-            };
-            let texture_id = textures.insert(texture);
-
-            self.my_texture_id = Some(texture_id);
-        }
-
-        if self.lenna.is_none() {
-            self.lenna = Some(Lenna::new(gl_ctx, textures)?);
-        }
-
-        Ok(())
-    }
-
-    pub fn show_textures(&self, ui: &Ui) {
-        ui.window("Hello textures")
-            .size([400.0, 400.0], Condition::FirstUseEver)
-            .build(|| {
-                ui.text("Hello textures!");
-                if let Some(my_texture_id) = self.my_texture_id {
-                    ui.text("Some generated texture");
-                    Image::new(my_texture_id, [100.0, 100.0]).build(ui);
-                }
-
-                if let Some(lenna) = &self.lenna {
-                    ui.text("Say hello to Lenna.jpg");
-                    lenna.show(ui);
-                }
-
-                // Example of using custom textures on a button
-                if let Some(lenna) = &self.lenna {
-                    ui.text("The Lenna buttons");
-
-                    {
-                        ui.invisible_button("Boring Button", [100.0, 100.0]);
-                        // See also `imgui::Ui::style_color`
-                        let tint_none = [1.0, 1.0, 1.0, 1.0];
-                        let tint_green = [0.5, 1.0, 0.5, 1.0];
-                        let tint_red = [1.0, 0.5, 0.5, 1.0];
-
-                        let tint = match (
-                            ui.is_item_hovered(),
-                            ui.is_mouse_down(imgui::MouseButton::Left),
-                        ) {
-                            (false, false) => tint_none,
-                            (false, true) => tint_none,
-                            (true, false) => tint_green,
-                            (true, true) => tint_red,
-                        };
-
-                        let draw_list = ui.get_window_draw_list();
-                        draw_list
-                            .add_image(lenna.texture_id, ui.item_rect_min(), ui.item_rect_max())
-                            .col(tint)
-                            .build();
-                    }
-
-                    {
-                        ui.same_line();
-
-                        // Button using quad positioned image
-                        ui.invisible_button("Exciting Button", [100.0, 100.0]);
-
-                        // Button bounds
-                        let min = ui.item_rect_min();
-                        let max = ui.item_rect_max();
-
-                        // get corner coordinates
-                        let tl = [
-                            min[0],
-                            min[1] + (ui.frame_count() as f32 / 10.0).cos() * 10.0,
-                        ];
-                        let tr = [
-                            max[0],
-                            min[1] + (ui.frame_count() as f32 / 10.0).sin() * 10.0,
-                        ];
-                        let bl = [min[0], max[1]];
-                        let br = max;
-
-                        let draw_list = ui.get_window_draw_list();
-                        draw_list
-                            .add_image_quad(lenna.texture_id, tl, tr, br, bl)
-                            .build();
-                    }
-
-                    // Rounded image
-                    {
-                        ui.same_line();
-                        ui.invisible_button("Smooth Button", [100.0, 100.0]);
-
-                        let draw_list = ui.get_window_draw_list();
-                        draw_list
-                            .add_image_rounded(
-                                lenna.texture_id,
-                                ui.item_rect_min(),
-                                ui.item_rect_max(),
-                                16.0,
-                            )
-                            // Tint brighter for visiblity of corners
-                            .col([2.0, 0.5, 0.5, 1.0])
-                            // Rounding on each corner can be changed separately
-                            .round_top_left(ui.frame_count() / 60 % 4 == 0)
-                            .round_top_right((ui.frame_count() + 1) / 60 % 4 == 1)
-                            .round_bot_right((ui.frame_count() + 3) / 60 % 4 == 2)
-                            .round_bot_left((ui.frame_count() + 2) / 60 % 4 == 3)
-                            .build();
-                    }
-                }
-            });
-    }
-}
-
-pub struct Lenna {
-    texture_id: TextureId,
-    size: [f32; 2],
-}
-
-impl Lenna {
-    fn new<F>(
-        gl_ctx: &F,
-        textures: &mut Textures<Texture>,
-        //gameboy: &mut GameBoy,
-    ) -> Result<Self, Box<dyn Error>>
-    where
-        F: Facade,
-    {
-        let mut framebuffer: Vec<u8> = Vec::new();
-        framebuffer.fill(200);
-        //gameboy.export_display(&mut framebuffer);
+        // Import as new entry into textures
+        //let mut data = Vec::with_capacity(self.width * self.height);
+        //self.gameboy.export_display(&mut data);
 
         let raw = RawImage2d {
-            data: Cow::Owned(framebuffer),
-            width: SCREEN_WIDTH as u32,
-            height: SCREEN_HEIGHT as u32,
+            data: Cow::Owned(data),
+            width: self.width as u32,
+            height: self.height as u32,
             format: ClientFormat::U8U8U8,
         };
         let gl_texture = Texture2d::new(gl_ctx, raw)?;
@@ -208,14 +60,40 @@ impl Lenna {
                 ..Default::default()
             },
         };
-        let texture_id = textures.insert(texture);
-        Ok(Lenna {
-            texture_id,
-            size: [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32],
-        })
+
+        if let Some(t_id) = self.texture_id {
+            textures.replace(t_id, texture);
+        } else {
+            let texture_id = textures.insert(texture);
+
+            self.texture_id = Some(texture_id);
+        }
+
+        Ok(())
     }
 
-    fn show(&self, ui: &Ui) {
-        Image::new(self.texture_id, self.size).build(ui);
+    pub fn show_textures(&self, ui: &Ui) {
+        ui.window("Hello textures")
+            .size([400.0, 400.0], Condition::FirstUseEver)
+            .build(|| {
+                ui.text("Hello textures!");
+                if let Some(my_texture_id) = self.texture_id {
+                    ui.text("Some generated texture");
+                    Image::new(my_texture_id, [100.0, 100.0]).build(ui);
+                }
+                /*
+                let draw_list = ui.get_window_draw_list();
+                draw_list
+                    .add_image(lenna.texture_id, ui.item_rect_min(), ui.item_rect_max())
+                    .col(tint)
+                    .build();
+                }
+                */
+            });
     }
+}
+
+pub struct Lenna {
+    texture_id: TextureId,
+    size: [f32; 2],
 }

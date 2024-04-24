@@ -9,9 +9,12 @@ use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::path::Path;
 use std::time::Instant;
 
-use super::GameBoy;
+use crate::{SCREEN_HEIGHT, SCREEN_WIDTH};
+
+use super::{gameboy, GameBoy};
 
 mod clipboard;
+pub mod rendering;
 
 pub struct System {
     pub event_loop: EventLoop<()>,
@@ -157,6 +160,11 @@ impl System {
                 renderer
                     .render(&mut target, draw_data)
                     .expect("Rendering failed");
+
+                // GameBoy
+                //let mut data = Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT);
+                //self.gameboy.export_display(&mut data);
+
                 target.finish().expect("Failed to swap buffers");
             }
             Event::WindowEvent {

@@ -58,7 +58,7 @@ fn main() {
     let should_sleep: bool = true;
     let sleep_time = time::Duration::from_millis(10);
 
-    system.main_loop(move |_, ui, gameboy| {
+    system.main_loop(move |_, ui| {
         ui.show_demo_window(&mut true);
 
         if is_playing {

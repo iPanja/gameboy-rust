@@ -4,6 +4,7 @@ use std::error::Error;
 use std::io::{Cursor, Read};
 use std::rc::Rc;
 
+use gameboy::ui::rendering::ScreenTextureManager;
 use glium::backend::Facade;
 use glium::glutin::event::{Event, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop};
@@ -57,10 +58,13 @@ fn main() {
     // Timer for FPS calculation
     let mut last_frame = std::time::Instant::now();
 
-    // Fix: Assign the imgui::Textures instance to a variable before borrowing it
-    let mut textures = imgui::Textures::<imgui_glium_renderer::Texture>::new();
-    //let textures_ref: &'static mut imgui::Textures<imgui_glium_renderer::Texture> = &mut textures;
-    let mut texture_id: Option<TextureId> = None;
+    // Screen Renders
+    let mut gb_display_manager: ScreenTextureManager = ScreenTextureManager {
+        texture_id: None,
+        width: SCREEN_WIDTH as f32,
+        height: SCREEN_HEIGHT as f32,
+    };
+    // TODO: debugger
 
     // Standard winit event loop
     event_loop.run(move |event, _, control_flow| match event {
@@ -80,9 +84,11 @@ fn main() {
             // Create frame for the all important `&imgui::Ui`
             let ui = imgui_context.frame();
 
-            // Draw our example content
-            ui.show_demo_window(&mut true);
-            render_gameboy_window(ui, texture_id);
+            // CREATE UI
+            {
+                ui.show_demo_window(&mut true);
+                render_gameboy_window(ui, gb_display_manager);
+            }
 
             // Setup for drawing
             let gl_window = display.gl_window();
@@ -99,6 +105,19 @@ fn main() {
                 .expect("Rendering failed");
             target.finish().expect("Failed to swap buffers");
 
+            // Screen renders
+            let mut gb_display_buffer: Vec<u8> = Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT);
+            gameboy.export_display(&mut gb_display_buffer);
+            match gb_display_manager.insert_or_update(
+                display.get_context(),
+                &mut renderer.textures(),
+                gb_display_buffer,
+            ) {
+                Ok(_id) => {}
+                Err(_e) => println!("{:?}", _e),
+            }
+
+            /*
             match dummy_texture(
                 display.get_context(),
                 &mut renderer.textures(),
@@ -107,8 +126,9 @@ fn main() {
             ) {
                 Ok(_id) => texture_id = Some(_id),
                 Err(_e) => println!("{:?}", _e),
-            }
+            }*/
 
+            // Emulation logic
             gameboy.tick();
         }
         Event::WindowEvent {
@@ -154,24 +174,6 @@ fn imgui_init(display: &glium::Display) -> (imgui_winit_support::WinitPlatform, 
     (winit_platform, imgui_context)
 }
 
-fn render_gameboy_window(ui: &mut Ui, texture_id: Option<TextureId>) {
-    ui.window("Display")
-        .size(
-            [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32],
-            Condition::Appearing,
-        )
-        .resizable(true)
-        .position([5.0, 450.0], Condition::Appearing)
-        .build(|| {
-            if let Some(my_texture_id) = texture_id {
-                ui.text("Some generated texture");
-                Image::new(my_texture_id, [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32]).build(ui);
-            } else {
-                ui.text("Failed to load texture");
-            }
-        });
-}
-
 fn dummy_texture(
     gl_ctx: &dyn Facade,
     textures: &mut Textures<Texture>,
@@ -190,16 +192,6 @@ fn dummy_texture(
     }*/
 
     gameboy.export_display(&mut data);
-
-    /*
-    let lenna_bytes = include_bytes!("DuhPatrick.jpg");
-    let byte_stream = Cursor::new(lenna_bytes.as_ref());
-    let decoder = image::jpeg::JpegDecoder::new(byte_stream)?;
-
-    let (width, height) = image::ImageDecoder::dimensions(&decoder);
-    let mut image = vec![0; image::ImageDecoder::total_bytes(&decoder) as usize];
-    image::ImageDecoder::read_image(decoder, &mut image)?;
-    */
 
     let raw = RawImage2d {
         data: Cow::Owned(data),
@@ -224,4 +216,22 @@ fn dummy_texture(
     } else {
         return Ok(textures.insert(texture));
     }
+}
+
+/*    IMGUI WINDOWS RENDERING    */
+fn render_gameboy_window(ui: &mut Ui, stm: ScreenTextureManager) {
+    ui.window("Display")
+        .size(
+            [SCREEN_WIDTH as f32 + 15.0, SCREEN_HEIGHT as f32 + 35.0],
+            Condition::Appearing,
+        )
+        .resizable(false)
+        .position([5.0, 450.0], Condition::Appearing)
+        .build(|| {
+            if let Some(my_texture_id) = stm.texture_id {
+                Image::new(my_texture_id, [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32]).build(ui);
+            } else {
+                ui.text("Failed to load texture");
+            }
+        });
 }
