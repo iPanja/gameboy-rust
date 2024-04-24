@@ -92,8 +92,3 @@ impl ScreenTextureManager {
             });
     }
 }
-
-pub struct Lenna {
-    texture_id: TextureId,
-    size: [f32; 2],
-}

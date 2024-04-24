@@ -23,18 +23,20 @@ impl GameBoy {
         self.tick_bp(None);
     }
 
-    pub fn tick_bp(&mut self, _breakpoints: Option<&Vec<u16>>) {
+    pub fn tick_bp(&mut self, _breakpoints: Option<&Vec<u16>>) -> bool {
         self.enable_display(); // TODO: place this somewhere more logical...
         let mut current_frame_cycles: f64 = 0f64;
 
-        let are_breakpoints_enabled = _breakpoints.is_some();
+        let are_breakpoints_enabled: bool = _breakpoints.is_some();
 
         while current_frame_cycles < self.bus.timer.get_clock_freq() {
             current_frame_cycles += self.step();
             if are_breakpoints_enabled && _breakpoints.unwrap().contains(&self.cpu.registers.pc) {
-                break;
+                return true;
             }
         }
+
+        return false;
     }
 
     pub fn step(&mut self) -> f64 {
