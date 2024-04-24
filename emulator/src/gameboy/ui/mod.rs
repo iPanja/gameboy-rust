@@ -11,8 +11,6 @@ use std::time::Instant;
 
 mod clipboard;
 
-pub mod rendering;
-
 pub struct System {
     pub event_loop: EventLoop<()>,
     pub display: glium::Display,

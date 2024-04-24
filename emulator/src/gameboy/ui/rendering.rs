@@ -26,11 +26,11 @@ pub struct CustomTexturesApp {
 }
 
 impl CustomTexturesApp {
-    fn register_textures<F>(
+    pub fn register_textures<F>(
         &mut self,
         gl_ctx: &F,
         textures: &mut Textures<Texture>,
-        gameboy: &GameBoy,
+        //gameboy: &mut GameBoy,
     ) -> Result<(), Box<dyn Error>>
     where
         F: Facade,
@@ -71,13 +71,13 @@ impl CustomTexturesApp {
         }
 
         if self.lenna.is_none() {
-            self.lenna = Some(Lenna::new(gl_ctx, textures, gameboy)?);
+            self.lenna = Some(Lenna::new(gl_ctx, textures)?);
         }
 
         Ok(())
     }
 
-    fn show_textures(&self, ui: &Ui) {
+    pub fn show_textures(&self, ui: &Ui) {
         ui.window("Hello textures")
             .size([400.0, 400.0], Condition::FirstUseEver)
             .build(|| {
@@ -184,13 +184,14 @@ impl Lenna {
     fn new<F>(
         gl_ctx: &F,
         textures: &mut Textures<Texture>,
-        gameboy: &GameBoy,
+        //gameboy: &mut GameBoy,
     ) -> Result<Self, Box<dyn Error>>
     where
         F: Facade,
     {
         let mut framebuffer: Vec<u8> = Vec::new();
-        gameboy.export_display(&mut framebuffer);
+        framebuffer.fill(200);
+        //gameboy.export_display(&mut framebuffer);
 
         let raw = RawImage2d {
             data: Cow::Owned(framebuffer),

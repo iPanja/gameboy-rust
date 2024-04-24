@@ -96,6 +96,11 @@ fn main() {
     /* start main loop */
     let mut event_pump = sdl.event_pump().unwrap();
 
+    // me
+    let textures: &mut imgui::Textures<imgui_glium_renderer::Texture> =
+        &mut imgui::Textures::<imgui_glium_renderer::Texture>::new();
+    let mut texture_id: Option<TextureId> = None;
+
     'main: loop {
         for event in event_pump.poll_iter() {
             /* pass all events to imgui platfrom */
@@ -125,6 +130,28 @@ fn main() {
                 ui.text(format!("{:?}", gameboy.cpu.registers));
             });
 
+        ui.window("Display")
+            .size(
+                [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32],
+                Condition::Always,
+            )
+            .resizable(false)
+            .position([5.0, 450.0], Condition::Appearing)
+            .build(|| {
+                if let Some(my_texture_id) = texture_id {
+                    ui.text("Some generated texture");
+                    Image::new(my_texture_id, [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32])
+                        .build(ui);
+                } else {
+                    ui.text("Failed to load texture");
+                }
+            });
+
+        /*      me     */
+        texture_id = match dummy_texture(gl.get_context(), textures) {
+            Ok(_texture_id) => Some(_texture_id),
+            Err(_box) => None,
+        };
         /* render */
         let draw_data = imgui.render();
 

@@ -4,3 +4,4 @@ roms/*
 src/gameboy/cpu.rs.old
 emulator/gb-log
 emulator/gb-vram-log
+emulator/src/DuhPatrick.jpg
