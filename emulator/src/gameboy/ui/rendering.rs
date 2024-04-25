@@ -76,11 +76,6 @@ impl ScreenTextureManager {
         ui.window("Hello textures")
             .size([400.0, 400.0], Condition::FirstUseEver)
             .build(|| {
-                ui.text("Hello textures!");
-                if let Some(my_texture_id) = self.texture_id {
-                    ui.text("Some generated texture");
-                    Image::new(my_texture_id, [100.0, 100.0]).build(ui);
-                }
                 /*
                 let draw_list = ui.get_window_draw_list();
                 draw_list
