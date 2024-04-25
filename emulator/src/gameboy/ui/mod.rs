@@ -16,6 +16,7 @@ use super::{gameboy, GameBoy};
 mod clipboard;
 pub mod rendering;
 
+/*
 pub struct System {
     pub event_loop: EventLoop<()>,
     pub display: glium::Display,
@@ -178,3 +179,4 @@ impl System {
         })
     }
 }
+*/
