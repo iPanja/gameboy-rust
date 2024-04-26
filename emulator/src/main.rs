@@ -178,7 +178,7 @@ fn main() {
             // Tile map
             let mut gb_debugger_buffer =
                 Vec::with_capacity(DEBUGGER_SCREEN_WIDTH * DEBUGGER_SCREEN_HEIGHT);
-            gameboy.export_debug_display(&mut gb_debugger_buffer);
+            gameboy.export_tile_map_display(&mut gb_debugger_buffer);
             match gb_debugger_manager.insert_or_update(
                 display.get_context(),
                 &mut renderer.textures(),

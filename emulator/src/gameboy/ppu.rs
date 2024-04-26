@@ -16,6 +16,7 @@ pub struct PPU {
     tile_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
     tile_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
     raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
+    oam: [[u8; 4]; 40],
     // IO Registers 0xFF40-0xFF4B
     lcdc: u8,         // PPU control register - 0xFF40
     stat: u8,         // PPU status register - 0xFF41
@@ -202,6 +203,7 @@ impl PPU {
             tile_map_1: [0; 0x3FF + 1],
             tile_map_2: [0; 0x3FF + 1],
             raw_oam: [0; 0xA0],
+            oam: [[0; 4]; 40],
             lcdc: 0,
             stat: 0,
             scy: 0,
@@ -279,8 +281,6 @@ impl PPU {
             }
             0x8000..=0x97FF => {
                 self.write_tile_set_data(real_addr - 0x8000, value);
-                //log_vec(Vec::from(self.raw_tile_vram));
-                //log_data(self.tile_set);
             }
             0x9800..=0x9BFF => {
                 self.tile_map_1[real_addr - 0x9800] = value;
@@ -288,26 +288,13 @@ impl PPU {
             0x9C00..=0x9FFF => {
                 self.tile_map_2[real_addr - 0x9C00] = value;
             }
-            0xFE00..=0xFE9F => self.raw_oam[real_addr - 0xFE00] = value,
+            0xFE00..=0xFE9F => {
+                self.write_oam_data(real_addr - 0xFE00, value)
+            },
             _ => {
                 panic!("Unsupported VRAM access at byte: {:#X}", real_addr);
             }
         };
-
-        // Not writing to tile set storage => no need to cache
-        if index >= 0x1800 {
-            return;
-        }
-
-        /* Cache
-        let first_index = index & 0xFFFE;
-
-        let byte1 = self.vram[first_index];
-        let byte2 = self.vram[first_index + 1];
-
-        let tile_index = index / 16;
-        let row_index = (index % 16) / 2;
-        */
     }
 
     fn write_tile_set_data(&mut self, index: usize, byte: u8) {
@@ -337,17 +324,15 @@ impl PPU {
     }
 
     fn read_tile_set_data_as_byte(&self, index: usize) -> u8 {
-        /*
-        let tile_no = index / 16;
-        let pixel_no = (index % 16) / 2;
-        let result = (self.tile_set[tile_no][pixel_no][pixel_no] as u8) << 6
-            | (self.tile_set[tile_no][pixel_no][pixel_no + 1] as u8) << 4
-            | (self.tile_set[tile_no][pixel_no][pixel_no + 2] as u8) << 2
-            | self.tile_set[tile_no][pixel_no][pixel_no + 3] as u8;
-
-        result
-        */
         self.raw_tile_vram[index]
+    }
+
+    fn write_oam_data(&mut self, index: usize, byte: u8) {
+        self.raw_oam[index] = byte;
+        let byte_pos = index & 0x3;
+        let oam_index = index & 0xFFFC;
+
+        self.oam[oam_index][byte_pos] = byte;
     }
 
     pub fn enable_lcd(&mut self, bus: &mut Bus) {
@@ -384,19 +369,25 @@ impl PPU {
     }
 
     pub fn get_display(&self, bus: &Bus, scx: u8, scy: u8, buffer: &mut [[Pixel; 20 * 8]; 18 * 8]) {
-        let mut tile_buffer: [Tile; 360] = [empty_tile(); 360];
-        self.get_background_map(&mut tile_buffer);
+        let mut bg_tile_buffer: [Tile; 360] = [empty_tile(); 360];
+        self.get_background_map(&mut bg_tile_buffer);
 
-        for (i, tile_data) in tile_buffer.iter().enumerate() {
+        // 20x18 view of the background
+        // Begin at (scx, scy)
+        //let starting_index = 
+
+
+        /*
+        for (i, tile_data) in bg_tile_buffer.iter().enumerate() {
             let start_row = (i / 20) * 8;
             let start_col = (i * 8) % (20 * 8);
             //println!("{}, {}", start_row, start_col);
             for dy in 0..8 {
                 for dx in 0..8 {
-                    buffer[start_row + dy][start_col + dx] = tile_data[dy][dx];
+                    buffer[start_row + dy][start_col + dx] = bg_tile_data[dy][dx];
                 }
             }
-        }
+        }*/
     }
 
     pub fn get_debug_display(&self, buffer: &mut [[Pixel; 16 * 8]; 32 * 8]) {

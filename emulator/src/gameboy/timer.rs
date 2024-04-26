@@ -83,7 +83,6 @@ impl Timer {
 
         let and_result = bit != 0 && self.is_clock_enabled();
         if !self.prev_and_result && and_result {
-            //println!("\t!INC CLOCK");
             // Looking for falling edge (1 -> 0)
             self.tima = self.tima.wrapping_add(1);
             // Delay overflow checking
