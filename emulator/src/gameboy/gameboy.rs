@@ -14,8 +14,8 @@ impl GameBoy {
         GameBoy {
             cpu: CPU::new(),
             bus: Bus::new(),
-            screen: [[Pixel::Black; SCREEN_WIDTH]; SCREEN_HEIGHT],
-            tile_map_screen: [[Pixel::Black; 128]; 256],
+            screen: [[Pixel::Zero; SCREEN_WIDTH]; SCREEN_HEIGHT],
+            tile_map_screen: [[Pixel::Zero; 128]; 256],
         }
     }
 
@@ -73,7 +73,7 @@ impl GameBoy {
     // Public display methods
     //
     pub fn enable_display(&mut self) {
-        self.bus.ram_write_byte(0xFF44, 0x90); //[0xFF44] = 0x90;
+        //self.bus.ram_write_byte(0xFF44, 0x90); //[0xFF44] = 0x90;
         self.bus.ram_write_byte(0xFF40, 0b1010000); //[0xFF40] = 0b1010000;
         self.bus.ram_write_byte(0xFF42, 0); //[0xFF42] = 0;
     }
@@ -87,13 +87,17 @@ impl GameBoy {
             &mut self.screen,
         );
 
+        // Testing - increase scanline
+        //self.bus.ppu.ly += if self.bus.ppu.ly > 0x90 - 1 { 0 } else { 1 };
+        //self.bus.ppu.ly = (self.bus.ppu.ly + 1) % 144;
+
         // Export as vector
         self.convert_disply_to_vec(&self.screen, buffer);
     }
 
     pub fn export_tile_map_display(&mut self, buffer: &mut Vec<u8>) {
         // Update internal frame buffer
-        self.bus.ram_write_byte(0xFF44, 0x90);
+        //self.bus.ram_write_byte(0xFF44, 0x90);
         self.bus.ppu.get_debug_display(&mut self.tile_map_screen);
 
         // Export as vector
@@ -125,15 +129,19 @@ impl GameBoy {
     }
 
     //pub fn convert(&mut self, display: , buffer: &mut Vec<u8>)
-    fn convert_disply_to_vec<const W: usize, const H: usize>(&self, display: &[[Pixel; W]; H], buffer: &mut Vec<u8>){
+    fn convert_disply_to_vec<const W: usize, const H: usize>(
+        &self,
+        display: &[[Pixel; W]; H],
+        buffer: &mut Vec<u8>,
+    ) {
         *buffer = Vec::with_capacity(W * H);
         for row in display {
             for pixel in row {
                 let (r, g, b) = match *pixel {
-                    Pixel::White => (255, 255, 255),
-                    Pixel::DarkGray => (255, 0, 0),
-                    Pixel::LightGray => (0, 255, 0),
-                    Pixel::Black => (0, 0, 0),
+                    Pixel::Three => (255, 255, 255),
+                    Pixel::Two => (255, 0, 0),
+                    Pixel::One => (0, 255, 0),
+                    Pixel::Zero => (0, 0, 0),
                 };
                 buffer.push(r);
                 buffer.push(g);

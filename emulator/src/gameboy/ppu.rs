@@ -23,16 +23,20 @@ pub struct PPU {
     scy: u8,          // Vertical scroll register - 0xFF42
     scx: u8,          // Horizontal scroll register - 0xFF43
     pub ly: u8,       // Scanline register - 0xFF44
+    lyc: u8,          // LY Compare - 0xFF45
     bg_palette: u8,   // Background color palette - 0xFF47
     ob_palette_1: u8, // Object color palette 1 - 0xFF48
     ob_palette_2: u8, // Object color palette 2 - 0xFF49
     wy: u8,           // Window Y position - 0xFF4A
     wx: u8,           // Window X position - 0xFF4B
     // Internal data structures
-    background_fifo: [Pixel; 8],
-    sprite_fifo: [Pixel; 8],
-    bg_x_pc: usize,
-    window_lc: usize,
+    screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT],
+    background_fifo: [Option<Pixel>; 16],
+    sprite_fifo: [Option<u8>; 16], // Sprite indexes
+    mode: Mode,
+    oam_index: usize,
+    current_scanline_cycles: f64,
+    pixel_fetcher: PixelFetcher,
 }
 
 // https://github.com/Hacktix/GBEDG/blob/master/ppu/index.md#the-concept-of-ppu-modes
@@ -44,41 +48,84 @@ pub enum Mode {
     Drawing = 3, // Where the PPU transfers pixels to the LCD.
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum FetchState {
+    ReadTile,
+    ReadData0,
+    ReadData1,
+}
+
+struct PixelFetcher {
+    state: FetchState,
+    tile_index: Option<u8>,
+    upper_nibble: Option<u8>,
+    lower_nibble: Option<u8>,
+    scanline_x: u8,
+    scanline_y: u8,
+}
+
+impl PixelFetcher {
+    pub fn new() -> Self {
+        PixelFetcher {
+            state: FetchState::ReadTile,
+            tile_index: None,
+            upper_nibble: None,
+            lower_nibble: None,
+            scanline_x: 0,
+            scanline_y: 0,
+        }
+    }
+
+    pub fn next(&mut self) {
+        self.state = match self.state {
+            FetchState::ReadTile => FetchState::ReadData0,
+            FetchState::ReadData0 => FetchState::ReadData1,
+            FetchState::ReadData1 => {
+                self.tile_index = None;
+                self.upper_nibble = None;
+                self.lower_nibble = None;
+
+                FetchState::ReadTile
+            }
+        }
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)] // Debug
 pub enum Pixel {
-    White,     // 0b11
-    DarkGray,  // 0b10
-    LightGray, // 0b01
-    Black,     // 0b00
+    Three, // 0b11
+    Two,   // 0b10
+    One,   // 0b01
+    Zero,  // 0b00
 }
 
 impl std::convert::From<Pixel> for Color {
     fn from(pixel: Pixel) -> Color {
         match pixel {
-            Pixel::White => Color::RGB(255, 255, 255),
-            Pixel::LightGray => Color::RGB(255, 0, 0),
-            Pixel::DarkGray => Color::RGB(0, 255, 0),
-            Pixel::Black => Color::RGB(0, 0, 0),
+            Pixel::Three => Color::RGB(255, 255, 255),
+            Pixel::One => Color::RGB(255, 0, 0),
+            Pixel::Two => Color::RGB(0, 255, 0),
+            Pixel::Zero => Color::RGB(0, 0, 0),
         }
     }
 }
 impl std::convert::From<Pixel> for u8 {
     fn from(pixel: Pixel) -> u8 {
         match pixel {
-            Pixel::White => 0b11,
-            Pixel::LightGray => 0b10,
-            Pixel::DarkGray => 0b01,
-            Pixel::Black => 0b00,
+            Pixel::Three => 0b11,
+            Pixel::One => 0b10,
+            Pixel::Two => 0b01,
+            Pixel::Zero => 0b00,
         }
     }
 }
 impl std::convert::From<u8> for Pixel {
     fn from(byte: u8) -> Pixel {
         match byte {
-            0b11 => Pixel::White,
-            0b10 => Pixel::LightGray,
-            0b01 => Pixel::DarkGray,
-            _ => Pixel::Black,
+            0b11 => Pixel::Three,
+            0b10 => Pixel::One,
+            0b01 => Pixel::Two,
+            _ => Pixel::Zero,
         }
     }
 }
@@ -86,17 +133,17 @@ impl std::convert::From<u8> for Pixel {
 impl fmt::Debug for Pixel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Pixel::White => write!(f, "W"),
-            Pixel::LightGray => write!(f, " "),
-            Pixel::DarkGray => write!(f, "+"),
-            Pixel::Black => write!(f, "B"),
+            Pixel::Three => write!(f, "W"),
+            Pixel::One => write!(f, " "),
+            Pixel::Two => write!(f, "+"),
+            Pixel::Zero => write!(f, "B"),
         }
     }
 }
 
 pub type Tile = [[Pixel; 8]; 8];
 fn empty_tile() -> Tile {
-    [[Pixel::Black; 8]; 8]
+    [[Pixel::Zero; 8]; 8]
 }
 
 /* Registers
@@ -209,15 +256,19 @@ impl PPU {
             scy: 0,
             scx: 0,
             ly: 0,
+            lyc: 0,
             bg_palette: 0,
             ob_palette_1: 0,
             ob_palette_2: 0,
             wy: 0,
             wx: 0,
-            background_fifo: [Pixel::White; 8],
-            sprite_fifo: [Pixel::White; 8],
-            bg_x_pc: 0,
-            window_lc: 0,
+            screen_buffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT],
+            background_fifo: [None; 16],
+            sprite_fifo: [None; 16],
+            mode: Mode::OAM,
+            oam_index: 0,
+            current_scanline_cycles: 0f64,
+            pixel_fetcher: PixelFetcher::new(),
         }
     }
 
@@ -228,6 +279,7 @@ impl PPU {
             0xFF42 => self.scy,
             0xFF43 => self.scx,
             0xFF44 => self.ly,
+            0xFF45 => self.lyc,
             0xFF47 => self.bg_palette,
             0xFF48 => self.ob_palette_1,
             0xFF49 => self.ob_palette_2,
@@ -264,6 +316,9 @@ impl PPU {
             0xFF44 => {
                 self.ly = value;
             }
+            0xFF45 => {
+                self.lyc = value;
+            }
             0xFF47 => {
                 self.bg_palette = value;
             }
@@ -288,9 +343,7 @@ impl PPU {
             0x9C00..=0x9FFF => {
                 self.tile_map_2[real_addr - 0x9C00] = value;
             }
-            0xFE00..=0xFE9F => {
-                self.write_oam_data(real_addr - 0xFE00, value)
-            },
+            0xFE00..=0xFE9F => self.write_oam_data(real_addr - 0xFE00, value),
             _ => {
                 panic!("Unsupported VRAM access at byte: {:#X}", real_addr);
             }
@@ -313,10 +366,10 @@ impl PPU {
             let lsb = byte1 & mask;
             let msb = byte2 & mask;
             let value = match (lsb != 0, msb != 0) {
-                (true, true) => Pixel::White,
-                (false, true) => Pixel::DarkGray,
-                (true, false) => Pixel::LightGray,
-                (false, false) => Pixel::Black,
+                (true, true) => Pixel::Three,
+                (false, true) => Pixel::Two,
+                (true, false) => Pixel::One,
+                (false, false) => Pixel::Zero,
             };
 
             self.tile_set[tile_index][row_index][pixel_index] = value;
@@ -335,9 +388,21 @@ impl PPU {
         self.oam[oam_index][byte_pos] = byte;
     }
 
+    fn can_access_memory(&mut self, mode: Mode) {
+        match mode {
+            Mode::HBlank => todo!(),  // Can only access: VRAM, OAM, CGB palletes
+            Mode::VBlank => todo!(),  // Can only access: VRAM, OAM, CGB palletes
+            Mode::OAM => todo!(),     // Can only access: VRAM, CGB palletes
+            Mode::Drawing => todo!(), // Can only access: None!
+        }
+    }
+
+    //
+    //  Display
+    //
+
     pub fn enable_lcd(&mut self, bus: &mut Bus) {
-        self.lcdc |= 0b1010000;
-        //bus.ram.ram[0xFF40] = 0b1010000 | self.vram[0xFF40];
+        self.lcdc |= 0b1010000; //bus.ram.ram[0xFF40] = 0b1010000 | self.vram[0xFF40];
     }
 
     fn get_address_mode(&self) -> u16 {
@@ -347,17 +412,24 @@ impl PPU {
         }
     }
 
-    fn get_background_map(&self, buffer: &mut [Tile; 360]) {
-        //println!("SCX: {:#X}, SCY: {:#X}", self.scx, self.scy);
+    fn get_sprite_height(&self) -> u8 {
+        match self.lcdc & 0b100 {
+            0 => 8,
+            _ => 16,
+        }
+    }
 
+    fn get_background_map(&self, buffer: &mut [Tile; 360]) {
         let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
             0 => &self.tile_map_1,
             _ => &self.tile_map_2,
         };
+
         *buffer = [empty_tile(); 20 * 18];
         // Background consists of 32x32 tiles, or 256x256 pixels
         // The viewport (Game Boy screen) can only show 20x18 tiles (160x144 pixels)
-        let start_index = (self.scx + self.scy * 20) as usize;
+        // let start_index = (self.scx + self.scy * 20) as usize;
+        let start_index = (((self.scx as u16) / 8) + ((self.scy as u16) / 8) * 20) as usize;
         let end_index: usize = start_index + (20 * 18);
 
         for (i, tile_id) in bg_map[start_index..end_index].iter().enumerate() {
@@ -374,8 +446,6 @@ impl PPU {
 
         // 20x18 view of the background
         // Begin at (scx, scy)
-        //let starting_index = 
-
 
         /*
         for (i, tile_data) in bg_tile_buffer.iter().enumerate() {
@@ -384,10 +454,17 @@ impl PPU {
             //println!("{}, {}", start_row, start_col);
             for dy in 0..8 {
                 for dx in 0..8 {
-                    buffer[start_row + dy][start_col + dx] = bg_tile_data[dy][dx];
+                    buffer[start_row + dy][start_col + dx] = tile_data[dy][dx];
                 }
             }
         }*/
+
+        let mut current_ly = self.ly;
+        println!("c ly: {:?}", current_ly);
+        for row in 0..SCREEN_HEIGHT {
+            buffer[row] = self.scanline_render(current_ly);
+            current_ly = (current_ly.wrapping_add(1) % SCREEN_HEIGHT as u8);
+        }
     }
 
     pub fn get_debug_display(&self, buffer: &mut [[Pixel; 16 * 8]; 32 * 8]) {
@@ -398,22 +475,8 @@ impl PPU {
                 let start_y = tile_y * 8;
                 let start_x = tile_x * 8;
 
-                /*
-                let tile_set_index = tile_no * 16;
-                for byte_start in 0..8 {
-                    let byte1 = self.raw_tile_vram[tile_set_index + byte_start*2];
-                    let byte2 = self.raw_tile_vram[tile_set_index + byte_start*2 + 1];
-
-                    for bit in 0..8 {
-                        let mask = 0b10000000 >> bit;
-                        let msb = (byte1 & mask) >> 7-bit;
-                        let lsb = (byte2 & mask) >> 7-bit;
-                        let pixel = Pixel::from((msb << 1) | lsb);
-                        buffer[start_y + byte_start][start_x + bit] = pixel;
-                    }
-                }
-                */
                 let tile: Tile = self.tile_set[tile_no];
+
                 for (dy, row) in tile.iter().enumerate() {
                     for (dx, pixel) in row.iter().enumerate() {
                         buffer[start_y + dy][start_x + dx] = *pixel;
@@ -447,10 +510,10 @@ impl PPU {
             let lsb = byte1 & mask;
             let msb = byte2 & mask;
             let value = match (lsb != 0, msb != 0) {
-                (true, true) => Pixel::White,
-                (false, true) => Pixel::DarkGray,
-                (true, false) => Pixel::LightGray,
-                (false, false) => Pixel::Black,
+                (true, true) => Pixel::Three,
+                (false, true) => Pixel::Two,
+                (true, false) => Pixel::One,
+                (false, false) => Pixel::Zero,
             };
 
             buffer[pixel_index] = value;
@@ -458,65 +521,169 @@ impl PPU {
     }
 
     //
-    //  Pixel FIFI
+    //  Pixel FIFO
     //
 
-    fn fetch_background_fifo(&mut self) {
-        // Each step takes 2 T-Cycles (8 total).
+    fn scanline_render(&self, ly: u8) -> [Pixel; SCREEN_WIDTH] {
+        let mut bg_tile_buffer: [Tile; 360] = [empty_tile(); 360];
+        self.get_background_map(&mut bg_tile_buffer);
 
-        // Step 1 - Fetch Tile No.
-        // TODO: Determine if rendering window or background - for now I will implement background
-        let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
-            0 => &self.tile_map_1,
-            _ => &self.tile_map_2,
-        };
+        let mut buffer: [Pixel; SCREEN_WIDTH] = [Pixel::Three; SCREEN_WIDTH];
 
-        let mut tile_index: u8 = bg_map[self.bg_x_pc];
-        self.bg_x_pc = (self.bg_x_pc + 1) % SCREEN_WIDTH;
+        // Position in screen/display
+        let mut screen_y = (self.scy as u16 + ly as u16) % SCREEN_HEIGHT as u16;
+        let mut screen_x = self.scx as u16;
 
-        // vvv IF NOT FETCHING WINDOW PIXELS vvv
-        tile_index += self.scx / 8;
-        tile_index &= 0x1F; // Wrap around support
+        // Convert to tilemap indexes
+        let tile_map_y = (screen_y / 8) as usize;
+        let tile_row = (screen_y - ((screen_y / 8) * 8)) as usize;
+        let initial_tile_map_x = screen_x / 8;
 
-        // vvv IF BACKGROUND PIXELS ARE BEING FETCHED vvv
-        tile_index += 32 * (((self.ly + self.scy) & 0xFF) / 8);
-        // OTHERWISE, IF WINDOW PIXELS ARE BEING FETCHED
-        // tile_index += 32 * (WINDOW_LINE_COUNTER / 8)
+        for tile in 0..(SCREEN_WIDTH / 8 as usize) {
+            // ...
+            let tile_map_x =
+                ((initial_tile_map_x + tile as u16) % (SCREEN_WIDTH / 8) as u16) as usize;
+            let inline_index = (tile_map_y * (SCREEN_WIDTH / 8)) + tile_map_x;
+            let tile_data = bg_tile_buffer[inline_index];
+            let row_data = tile_data[tile_row];
 
-        //tile_index &= 0x3FF; // Ensure address stays within the tile map
-
-        // Step 2 - Fetch Tile Data (Low)
-        let tile_byte_1: u8 = match self.get_address_mode() {
-            0x8000 => {
-                self.raw_tile_vram[(tile_index * 16 + 2 * ((self.ly + self.scy) % 8)) as usize]
+            for dx in 0..8 {
+                buffer[(tile * 8) + dx] = row_data[dx];
             }
-            _ => {
-                self.raw_tile_vram[((tile_index as i8 as i16 + 128) * 16
-                    + 2 * ((self.ly + self.scy) % 8) as i16)
-                    as usize]
-            }
-        };
+        }
 
-        // Step 3 - Fetch Tile Data (High)
-        let tile_byte_2: u8 = match self.get_address_mode() {
-            0x8000 => {
-                self.raw_tile_vram[(tile_index * 16 + 2 * ((self.ly + self.scy) % 8)) as usize + 1]
-            }
-            _ => {
-                self.raw_tile_vram[((tile_index as i8 as i16 + 128) * 16
-                    + 2 * ((self.ly + self.scy) % 8) as i16)
-                    as usize
-                    + 1]
-            }
-        };
+        buffer
+    }
 
-        // Step 4 - Push to FIFO
-        let mut pixel_buffer = [Pixel::White; 8];
-        self.decode_pixels_from_word(tile_byte_1, tile_byte_2, &mut pixel_buffer);
-        self.background_fifo = pixel_buffer;
+    fn fetch_background_fifo(&mut self) -> f64 {
+        if PPU::queue_size(&self.background_fifo).unwrap_or(9) < 8 {
+            // Load another 8 bytes
+            match self.pixel_fetcher.state {
+                FetchState::ReadTile => {}
+                FetchState::ReadData0 => {}
+                FetchState::ReadData1 => {}
+            };
+            self.pixel_fetcher.next();
+            return 2f64;
+        }
+        return 2f64;
     }
     fn fetch_sprite_fifo(&mut self) {}
     fn fetch_window_fifo(&mut self) {}
+
+    fn single_oam_scan(&mut self) -> f64 {
+        // Search for sprites that may be needed for the current scanline (LY)
+        // Consumes 2 cycles per entry check => 80 cycles total for a full scan
+        // This method will consume two cycles, just scanning a single entry
+        let sprite_data = self.oam[self.oam_index];
+
+        let y_position: u8 = sprite_data[0];
+        let x_position: u8 = sprite_data[1];
+        let tile_index: u8 = sprite_data[2]; // Always uses $8000 addressing (its an unsigned 8 bit integer)
+        let sprite_flags: u8 = sprite_data[3];
+
+        // Conditions to add to buffer
+        let sprite_height = self.get_sprite_height();
+        let sprites_in_buffer = PPU::queue_size(&self.sprite_fifo);
+
+        if x_position > 0
+            && self.ly + 16 >= y_position
+            && self.ly + 16 < y_position + sprite_height
+            && sprites_in_buffer.unwrap_or_else(|| 11) < 10
+        {
+            // add to sprite queue
+            PPU::push_sprite_into_buffer(&mut self.sprite_fifo, self.oam_index as u8);
+        }
+
+        self.oam_index += 1;
+
+        return 2f64;
+    }
+
+    // Some if non-full, None if full
+    fn queue_size<T, const N: usize>(buffer: &[Option<T>; N]) -> Option<usize> {
+        for i in 0..N {
+            if buffer[i].is_some() {
+                return Some(i + 1);
+            }
+        }
+        return None;
+    }
+
+    fn push_pixels_into_buffer(buffer: &mut [Option<Pixel>; 16], pixels: &[Pixel; 8]) {
+        let mut pushed = 0;
+        let mut index = 0;
+        while pushed < 8 {
+            if buffer[index].is_none() {
+                buffer[index] = Some(pixels[pushed]);
+                pushed += 1;
+            }
+
+            index += 1;
+        }
+
+        if pushed > 0 && pushed < 8 {
+            panic!("Error pushing pixels into buffer, already full?!?");
+        }
+    }
+
+    fn push_sprite_into_buffer(buffer: &mut [Option<u8>; 16], sprite_id: u8) -> bool {
+        for index in 0..16 {
+            if buffer[index].is_none() {
+                buffer[index] = Some(sprite_id);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    pub fn tick(&mut self, _cycles: u8) {
+        self.ly = (self.ly + 1) % 144;
+    }
+
+    fn step_wip(&mut self, t_cycles: f64) {
+        let mut cycles_left = t_cycles;
+
+        while cycles_left > 0.0 {
+            let cycles_consumed = match self.mode {
+                Mode::HBlank => 1f64, // Effectively just padding
+                Mode::VBlank => todo!(),
+                Mode::OAM => self.single_oam_scan(), // Entered at the start of every scanline (except for V-Blank)
+                Mode::Drawing => self.fetch_background_fifo(),
+            };
+
+            cycles_left -= cycles_consumed;
+            self.current_scanline_cycles += cycles_consumed;
+
+            // TODO: reset x position as well?
+            match self.mode {
+                Mode::HBlank => {
+                    if self.current_scanline_cycles >= 456f64 {
+                        self.mode = Mode::OAM;
+                        self.ly += 1;
+                        if self.ly > 144 {
+                            self.mode = Mode::VBlank;
+                        }
+                    }
+                }
+                Mode::VBlank => {
+                    self.ly += 1;
+                    if self.ly >= 154 {
+                        self.mode = Mode::OAM;
+                        self.ly = 0;
+                    }
+                }
+                Mode::OAM => {
+                    if self.oam_index >= 40 {
+                        self.mode = Mode::Drawing;
+                        self.oam_index = 0;
+                    }
+                }
+                Mode::Drawing => todo!(),
+            }
+        }
+    }
 }
 
 fn log(s: String) {
