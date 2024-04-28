@@ -5,7 +5,6 @@ use super::{ppu::Pixel, Bus, CPU, PPU};
 pub struct GameBoy {
     pub cpu: CPU,
     pub bus: Bus,
-    screen: [[Pixel; SCREEN_WIDTH]; SCREEN_HEIGHT],
     tile_map_screen: [[Pixel; 16 * 8]; 32 * 8],
 }
 
@@ -14,7 +13,6 @@ impl GameBoy {
         GameBoy {
             cpu: CPU::new(),
             bus: Bus::new(),
-            screen: [[Pixel::Zero; SCREEN_WIDTH]; SCREEN_HEIGHT],
             tile_map_screen: [[Pixel::Zero; 128]; 256],
         }
     }
@@ -27,7 +25,6 @@ impl GameBoy {
     }
 
     pub fn tick_bp(&mut self, _breakpoints: Option<&Vec<u16>>) -> bool {
-        self.enable_display(); // TODO: place this somewhere more logical...
         let mut current_frame_cycles: f64 = 0f64;
 
         let are_breakpoints_enabled: bool = _breakpoints.is_some();
@@ -73,26 +70,31 @@ impl GameBoy {
     // Public display methods
     //
     pub fn enable_display(&mut self) {
+        panic!("deprec");
         //self.bus.ram_write_byte(0xFF44, 0x90); //[0xFF44] = 0x90;
-        self.bus.ram_write_byte(0xFF40, 0b1010000); //[0xFF40] = 0b1010000;
-        self.bus.ram_write_byte(0xFF42, 0); //[0xFF42] = 0;
+        //self.bus.ram_write_byte(0xFF40, 0b1010000); //[0xFF40] = 0b1010000;
+        //self.bus.ram_write_byte(0xFF42, 0); //[0xFF42] = 0;
     }
 
     pub fn export_display(&mut self, buffer: &mut Vec<u8>) {
         // Update internal frame buffer
+        /*
         self.bus.ppu.get_display(
             &self.bus,
             self.bus.ram_read_byte(0xFF43),
             self.bus.ram_read_byte(0xFF42),
             &mut self.screen,
         );
+        */
+
+        *buffer = self.get_display().to_vec();
 
         // Testing - increase scanline
         //self.bus.ppu.ly += if self.bus.ppu.ly > 0x90 - 1 { 0 } else { 1 };
         //self.bus.ppu.ly = (self.bus.ppu.ly + 1) % 144;
 
         // Export as vector
-        self.convert_disply_to_vec(&self.screen, buffer);
+        //self.convert_disply_to_vec(&self.screen, buffer);
     }
 
     pub fn export_tile_map_display(&mut self, buffer: &mut Vec<u8>) {
@@ -107,17 +109,8 @@ impl GameBoy {
     //
     // Display helper methods
     //
-    fn get_display(&mut self) -> &[[Pixel; SCREEN_WIDTH]; SCREEN_HEIGHT] {
-        self.enable_display();
-
-        self.bus.ppu.get_display(
-            &self.bus,
-            self.bus.ram_read_byte(0xFF43),
-            self.bus.ram_read_byte(0xFF42),
-            &mut self.screen,
-        );
-
-        &self.screen
+    fn get_display(&mut self) -> &[u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3] {
+        self.bus.ppu.get_display()
     }
 
     fn get_debug_display(&mut self) -> &[[Pixel; 128]; 256] {

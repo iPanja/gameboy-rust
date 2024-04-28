@@ -85,9 +85,10 @@ impl Bus {
 
     pub fn tick(&mut self, cycles: u8) {
         self.timer.tick(cycles);
-        let mut current_frame_cycles: u8 = 0;
-        self.ppu.tick(cycles);
-        // ppu
+
+        if let Some(interrupt) = self.ppu.tick(cycles as u16) {
+            self.trigger_interrupt(interrupt);
+        }
     }
 
     pub fn debug(&mut self) {

@@ -50,7 +50,6 @@ fn main() {
     let mut gameboy = GameBoy::new();
     gameboy.read_rom(&rom_buffer);
     gameboy.read_rom(&bootstrap_buffer);
-    gameboy.enable_display();
 
     // Common setup for creating a winit window and imgui context, not specifc
     // to this renderer at all except that glutin is used to create the window
@@ -96,7 +95,7 @@ fn main() {
 
     // Sleep rate
     let should_sleep: bool = true;
-    let sleep_time = time::Duration::from_millis(10);
+    let sleep_time = time::Duration::from_millis(1);
 
     // Standard winit event loop
     event_loop.run(move |event, _, control_flow| match event {
@@ -165,7 +164,8 @@ fn main() {
 
             // Screen renders
             // Main display
-            let mut gb_display_buffer: Vec<u8> = Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT);
+            let mut gb_display_buffer: Vec<u8> =
+                Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT * 4);
             gameboy.export_display(&mut gb_display_buffer);
             match gb_display_manager.insert_or_update(
                 display.get_context(),

@@ -3,7 +3,7 @@ use std::{fmt, fs::OpenOptions, io::prelude::*};
 
 use crate::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
-use super::Bus;
+use super::{Bus, Interrupt};
 
 const VRAM_SIZE: usize = (0x9FFF - 0x8000) + (0xFE9F - 0xFE00);
 
@@ -30,13 +30,9 @@ pub struct PPU {
     wy: u8,           // Window Y position - 0xFF4A
     wx: u8,           // Window X position - 0xFF4B
     // Internal data structures
-    screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT],
-    background_fifo: [Option<Pixel>; 16],
-    sprite_fifo: [Option<u8>; 16], // Sprite indexes
-    mode: Mode,
-    oam_index: usize,
-    current_scanline_cycles: f64,
-    pixel_fetcher: PixelFetcher,
+    mode_cycles: u16,
+    // Display
+    screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3], // RGB
 }
 
 // https://github.com/Hacktix/GBEDG/blob/master/ppu/index.md#the-concept-of-ppu-modes
@@ -48,45 +44,23 @@ pub enum Mode {
     Drawing = 3, // Where the PPU transfers pixels to the LCD.
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum FetchState {
-    ReadTile,
-    ReadData0,
-    ReadData1,
-}
-
-struct PixelFetcher {
-    state: FetchState,
-    tile_index: Option<u8>,
-    upper_nibble: Option<u8>,
-    lower_nibble: Option<u8>,
-    scanline_x: u8,
-    scanline_y: u8,
-}
-
-impl PixelFetcher {
-    pub fn new() -> Self {
-        PixelFetcher {
-            state: FetchState::ReadTile,
-            tile_index: None,
-            upper_nibble: None,
-            lower_nibble: None,
-            scanline_x: 0,
-            scanline_y: 0,
+impl std::convert::From<Mode> for u8 {
+    fn from(mode: Mode) -> u8 {
+        match mode {
+            Mode::HBlank => 0b00,
+            Mode::VBlank => 0b01,
+            Mode::OAM => 0b10,
+            Mode::Drawing => 0b11,
         }
     }
-
-    pub fn next(&mut self) {
-        self.state = match self.state {
-            FetchState::ReadTile => FetchState::ReadData0,
-            FetchState::ReadData0 => FetchState::ReadData1,
-            FetchState::ReadData1 => {
-                self.tile_index = None;
-                self.upper_nibble = None;
-                self.lower_nibble = None;
-
-                FetchState::ReadTile
-            }
+}
+impl std::convert::From<u8> for Mode {
+    fn from(byte: u8) -> Mode {
+        match byte {
+            0b11 => Mode::Drawing,
+            0b10 => Mode::OAM,
+            0b01 => Mode::VBlank,
+            _ => Mode::HBlank,
         }
     }
 }
@@ -262,13 +236,8 @@ impl PPU {
             ob_palette_2: 0,
             wy: 0,
             wx: 0,
-            screen_buffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT],
-            background_fifo: [None; 16],
-            sprite_fifo: [None; 16],
-            mode: Mode::OAM,
-            oam_index: 0,
-            current_scanline_cycles: 0f64,
-            pixel_fetcher: PixelFetcher::new(),
+            screen_buffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT * 3],
+            mode_cycles: 0,
         }
     }
 
@@ -350,6 +319,41 @@ impl PPU {
         };
     }
 
+    fn get_mode(&self) -> Mode {
+        let lower = self.stat & 0b11;
+        Mode::from(lower)
+    }
+
+    fn set_mode(&mut self, new_mode: Mode) -> Option<Interrupt> {
+        self.stat &= !0b11; // Clear mode bits
+        self.stat |= u8::from(new_mode); // Set mode bits
+
+        match new_mode {
+            Mode::Drawing => None,
+            Mode::HBlank => {
+                if self.stat & 0b100 != 0 {
+                    Some(Interrupt::LCD)
+                } else {
+                    None
+                }
+            }
+            Mode::VBlank => {
+                if self.stat & 0b1000 != 0 {
+                    Some(Interrupt::LCD)
+                } else {
+                    None
+                }
+            }
+            Mode::OAM => {
+                if self.stat & 0b1_0000 != 0 {
+                    Some(Interrupt::LCD)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     fn write_tile_set_data(&mut self, index: usize, byte: u8) {
         self.raw_tile_vram[index] = byte;
         // A tile is 2 bytes. 1 byte will only populate half the tile, or 4 pixels
@@ -401,8 +405,12 @@ impl PPU {
     //  Display
     //
 
-    pub fn enable_lcd(&mut self, bus: &mut Bus) {
+    pub fn enable_lcd(&mut self) {
         self.lcdc |= 0b1010000; //bus.ram.ram[0xFF40] = 0b1010000 | self.vram[0xFF40];
+    }
+
+    pub fn is_lcd_enabled(&self) -> bool {
+        !(self.lcdc & 0b1000_0000 == 0)
     }
 
     fn get_address_mode(&self) -> u16 {
@@ -440,31 +448,8 @@ impl PPU {
         }
     }
 
-    pub fn get_display(&self, bus: &Bus, scx: u8, scy: u8, buffer: &mut [[Pixel; 20 * 8]; 18 * 8]) {
-        let mut bg_tile_buffer: [Tile; 360] = [empty_tile(); 360];
-        self.get_background_map(&mut bg_tile_buffer);
-
-        // 20x18 view of the background
-        // Begin at (scx, scy)
-
-        /*
-        for (i, tile_data) in bg_tile_buffer.iter().enumerate() {
-            let start_row = (i / 20) * 8;
-            let start_col = (i * 8) % (20 * 8);
-            //println!("{}, {}", start_row, start_col);
-            for dy in 0..8 {
-                for dx in 0..8 {
-                    buffer[start_row + dy][start_col + dx] = tile_data[dy][dx];
-                }
-            }
-        }*/
-
-        let mut current_ly = self.ly;
-        println!("c ly: {:?}", current_ly);
-        for row in 0..SCREEN_HEIGHT {
-            buffer[row] = self.scanline_render(current_ly);
-            current_ly = (current_ly.wrapping_add(1) % SCREEN_HEIGHT as u8);
-        }
+    pub fn get_display(&self) -> &[u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3] {
+        &self.screen_buffer
     }
 
     pub fn get_debug_display(&self, buffer: &mut [[Pixel; 16 * 8]; 32 * 8]) {
@@ -524,15 +509,15 @@ impl PPU {
     //  Pixel FIFO
     //
 
-    fn scanline_render(&self, ly: u8) -> [Pixel; SCREEN_WIDTH] {
+    fn scanline_render(&mut self) {
         let mut bg_tile_buffer: [Tile; 360] = [empty_tile(); 360];
         self.get_background_map(&mut bg_tile_buffer);
 
-        let mut buffer: [Pixel; SCREEN_WIDTH] = [Pixel::Three; SCREEN_WIDTH];
+        let mut row_buffer: [Pixel; SCREEN_WIDTH] = [Pixel::Three; SCREEN_WIDTH];
 
         // Position in screen/display
-        let mut screen_y = (self.scy as u16 + ly as u16) % SCREEN_HEIGHT as u16;
-        let mut screen_x = self.scx as u16;
+        let screen_y = (self.scy as u16 + self.ly as u16) % SCREEN_HEIGHT as u16;
+        let screen_x = self.scx as u16;
 
         // Convert to tilemap indexes
         let tile_map_y = (screen_y / 8) as usize;
@@ -548,140 +533,96 @@ impl PPU {
             let row_data = tile_data[tile_row];
 
             for dx in 0..8 {
-                buffer[(tile * 8) + dx] = row_data[dx];
+                row_buffer[(tile * 8) + dx] = row_data[dx];
             }
         }
 
-        buffer
-    }
-
-    fn fetch_background_fifo(&mut self) -> f64 {
-        if PPU::queue_size(&self.background_fifo).unwrap_or(9) < 8 {
-            // Load another 8 bytes
-            match self.pixel_fetcher.state {
-                FetchState::ReadTile => {}
-                FetchState::ReadData0 => {}
-                FetchState::ReadData1 => {}
-            };
-            self.pixel_fetcher.next();
-            return 2f64;
-        }
-        return 2f64;
-    }
-    fn fetch_sprite_fifo(&mut self) {}
-    fn fetch_window_fifo(&mut self) {}
-
-    fn single_oam_scan(&mut self) -> f64 {
-        // Search for sprites that may be needed for the current scanline (LY)
-        // Consumes 2 cycles per entry check => 80 cycles total for a full scan
-        // This method will consume two cycles, just scanning a single entry
-        let sprite_data = self.oam[self.oam_index];
-
-        let y_position: u8 = sprite_data[0];
-        let x_position: u8 = sprite_data[1];
-        let tile_index: u8 = sprite_data[2]; // Always uses $8000 addressing (its an unsigned 8 bit integer)
-        let sprite_flags: u8 = sprite_data[3];
-
-        // Conditions to add to buffer
-        let sprite_height = self.get_sprite_height();
-        let sprites_in_buffer = PPU::queue_size(&self.sprite_fifo);
-
-        if x_position > 0
-            && self.ly + 16 >= y_position
-            && self.ly + 16 < y_position + sprite_height
-            && sprites_in_buffer.unwrap_or_else(|| 11) < 10
-        {
-            // add to sprite queue
-            PPU::push_sprite_into_buffer(&mut self.sprite_fifo, self.oam_index as u8);
-        }
-
-        self.oam_index += 1;
-
-        return 2f64;
-    }
-
-    // Some if non-full, None if full
-    fn queue_size<T, const N: usize>(buffer: &[Option<T>; N]) -> Option<usize> {
-        for i in 0..N {
-            if buffer[i].is_some() {
-                return Some(i + 1);
-            }
-        }
-        return None;
-    }
-
-    fn push_pixels_into_buffer(buffer: &mut [Option<Pixel>; 16], pixels: &[Pixel; 8]) {
-        let mut pushed = 0;
-        let mut index = 0;
-        while pushed < 8 {
-            if buffer[index].is_none() {
-                buffer[index] = Some(pixels[pushed]);
-                pushed += 1;
-            }
-
-            index += 1;
-        }
-
-        if pushed > 0 && pushed < 8 {
-            panic!("Error pushing pixels into buffer, already full?!?");
-        }
-    }
-
-    fn push_sprite_into_buffer(buffer: &mut [Option<u8>; 16], sprite_id: u8) -> bool {
-        for index in 0..16 {
-            if buffer[index].is_none() {
-                buffer[index] = Some(sprite_id);
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    pub fn tick(&mut self, _cycles: u8) {
-        self.ly = (self.ly + 1) % 144;
-    }
-
-    fn step_wip(&mut self, t_cycles: f64) {
-        let mut cycles_left = t_cycles;
-
-        while cycles_left > 0.0 {
-            let cycles_consumed = match self.mode {
-                Mode::HBlank => 1f64, // Effectively just padding
-                Mode::VBlank => todo!(),
-                Mode::OAM => self.single_oam_scan(), // Entered at the start of every scanline (except for V-Blank)
-                Mode::Drawing => self.fetch_background_fifo(),
+        // Row buffer now populated => render it into current screen buffer
+        for (i, pixel) in row_buffer.iter().enumerate() {
+            let (r, g, b) = match *pixel {
+                Pixel::Three => (255, 255, 255),
+                Pixel::Two => (255, 0, 0),
+                Pixel::One => (0, 255, 0),
+                Pixel::Zero => (0, 0, 0),
             };
 
-            cycles_left -= cycles_consumed;
-            self.current_scanline_cycles += cycles_consumed;
+            let row_offset: usize = (self.ly as usize) * SCREEN_WIDTH * 3;
 
-            // TODO: reset x position as well?
-            match self.mode {
-                Mode::HBlank => {
-                    if self.current_scanline_cycles >= 456f64 {
-                        self.mode = Mode::OAM;
-                        self.ly += 1;
-                        if self.ly > 144 {
-                            self.mode = Mode::VBlank;
-                        }
-                    }
+            self.screen_buffer[row_offset + (i * 3)] = r;
+            self.screen_buffer[row_offset + (i * 3) + 1] = g;
+            self.screen_buffer[row_offset + (i * 3) + 2] = b;
+        }
+    }
+
+    pub fn tick(&mut self, _cycles: u16) -> Option<Interrupt> {
+        let mut raised_interrupt: Option<Interrupt> = None;
+
+        if !self.is_lcd_enabled() {
+            //println!("LCD DISABLED!");
+            return None;
+        }
+
+        self.mode_cycles += _cycles;
+        let mut cycles_left = _cycles;
+
+        while cycles_left > 0 {
+            // Expend them
+            let ticks_consumed = if cycles_left > 80 { 80 } else { cycles_left }; // Consume at most 80 dots per cycle
+            self.mode_cycles += ticks_consumed;
+            cycles_left -= ticks_consumed;
+
+            // Process
+            //println!("consuming: {}", ticks_consumed);
+
+            if self.ly < 144 {
+                // Normal
+                if self.mode_cycles < 80 {
+                    //println!("\tOAM");
+                    // OAM
+                    raised_interrupt = raised_interrupt.or(self.set_mode(Mode::OAM));
+                } else if self.mode_cycles < (80 + 172) {
+                    //println!("\tline render");
+                    self.scanline_render();
+                    raised_interrupt = raised_interrupt.or(self.set_mode(Mode::Drawing));
+                } else if self.mode_cycles < 456 {
+                    //println!("\thblank");
+                    raised_interrupt = raised_interrupt.or(self.set_mode(Mode::HBlank));
+                } else {
+                    //println!("\t=> next line!");
+                    self.ly = (self.ly + 1) % 154;
+                    raised_interrupt = raised_interrupt.or(self.set_mode(Mode::OAM));
+                    raised_interrupt = raised_interrupt.or(self.check_lyc_interrupt());
+                    self.mode_cycles = self.mode_cycles % 456;
                 }
-                Mode::VBlank => {
-                    self.ly += 1;
-                    if self.ly >= 154 {
-                        self.mode = Mode::OAM;
-                        self.ly = 0;
+            } else {
+                //println!("\tVBLANK");
+                // VBlank Lines
+                self.set_mode(Mode::VBlank);
+                if self.mode_cycles > 456 {
+                    self.ly = (self.ly + 1) % 154;
+
+                    raised_interrupt = raised_interrupt.or(self.check_lyc_interrupt());
+
+                    if self.ly < 144 {
+                        self.set_mode(Mode::OAM);
                     }
+
+                    self.mode_cycles = self.mode_cycles % 456;
                 }
-                Mode::OAM => {
-                    if self.oam_index >= 40 {
-                        self.mode = Mode::Drawing;
-                        self.oam_index = 0;
-                    }
-                }
-                Mode::Drawing => todo!(),
             }
+        }
+
+        // Return possible (STAT/LCD) interrupt
+        raised_interrupt
+    }
+
+    fn check_lyc_interrupt(&mut self) -> Option<Interrupt> {
+        if self.ly == self.lyc && self.stat & 0b10_0000 != 0 {
+            self.stat |= 0b10;
+            Some(Interrupt::LCD)
+        } else {
+            self.stat &= !0b10;
+            None
         }
     }
 }
