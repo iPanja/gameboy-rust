@@ -42,7 +42,7 @@ fn main() {
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = std::fs::File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
+    let mut rom = std::fs::File::open("../roms/Dr. Mario (JU) (V1.1).gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 

@@ -20,7 +20,7 @@ pub struct PPU {
     tile_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
     tile_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
     raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
-    oam: [[u8; 4]; 40],
+    oam: [Sprite; 40],   // [[u8; 4]; 40]
     // IO Registers 0xFF40-0xFF4B
     lcdc: u8,         // PPU control register - 0xFF40
     stat: u8,         // PPU status register - 0xFF41
@@ -35,6 +35,7 @@ pub struct PPU {
     wx: u8,           // Window X position - 0xFF4B
     // Internal data structures
     mode_cycles: u16,
+    scanline_sprite_cache: Vec<Sprite>,
     // Display
     screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3], // RGB
 }
@@ -80,10 +81,10 @@ pub enum Pixel {
 impl std::convert::From<Pixel> for Color {
     fn from(pixel: Pixel) -> Color {
         match pixel {
-            Pixel::Three => Color::RGB(255, 255, 255),
+            Pixel::Three => Color::RGB(0, 0, 0), // Black
             Pixel::One => Color::RGB(255, 0, 0),
             Pixel::Two => Color::RGB(0, 255, 0),
-            Pixel::Zero => Color::RGB(0, 0, 0),
+            Pixel::Zero => Color::RGB(255, 255, 255), // White
         }
     }
 }
@@ -122,6 +123,11 @@ impl fmt::Debug for Pixel {
 pub type Tile = [[Pixel; 8]; 8];
 fn empty_tile() -> Tile {
     [[Pixel::Zero; 8]; 8]
+}
+
+pub type Sprite = [u8; 4];
+fn empty_sprite() -> Sprite {
+    [0; 4]
 }
 
 /* Registers
@@ -228,7 +234,7 @@ impl PPU {
             tile_map_1: [0; 0x3FF + 1],
             tile_map_2: [0; 0x3FF + 1],
             raw_oam: [0; 0xA0],
-            oam: [[0; 4]; 40],
+            oam: [empty_sprite(); 40],
             lcdc: 0,
             stat: 0,
             scy: 0,
@@ -242,6 +248,7 @@ impl PPU {
             wx: 0,
             screen_buffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT * 3],
             mode_cycles: 0,
+            scanline_sprite_cache: Vec::with_capacity(10),
         }
     }
 
@@ -391,8 +398,9 @@ impl PPU {
     fn write_oam_data(&mut self, index: usize, byte: u8) {
         self.raw_oam[index] = byte;
         let byte_pos = index & 0x3;
-        let oam_index = index & 0xFFFC;
+        let oam_index = (index & 0xFFFC) / 4;
 
+        //println!("{:#X} -> {:#X}, {:#X}", index, oam_index, byte_pos);
         self.oam[oam_index][byte_pos] = byte;
     }
 
@@ -465,7 +473,7 @@ impl PPU {
         }
     }
 
-    fn copy_from_tile_set(&self, tile_id: u8) -> Tile {
+    fn copy_from_tile_set(&self, tile_id: usize) -> Tile {
         match self.get_address_mode() {
             0x8000 => self.tile_set[tile_id as usize],
             _ => self.tile_set[(tile_id as i8 as i16 + 128) as usize],
@@ -493,7 +501,7 @@ impl PPU {
     //
 
     // Fetch a row (SCREEN_WDITH) of pixels at the current LY
-    // This takes into account the scroll registers (SCX, SCY) as well
+    // Does NOT take into account the scroll registers (SCX, SCY) as well
     fn scanline_background(&self, row_buffer: &mut [Pixel; 32 * 8]) {
         // Select appropriate background tile map
         let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
@@ -528,12 +536,36 @@ impl PPU {
         }
     }
 
+    // Fetch a row (SCREEN_WDITH) of pixels at the current LY
+    fn scanline_sprites(&self, row_buffer: &mut [Option<Pixel>; SCREEN_WIDTH]) {
+        // Clear row buffer - ensuring we can detect empty tiles properly
+        *row_buffer = [None; SCREEN_WIDTH];
+
+        // Check all cached sprites (max 10) that occur on this scanline (self.ly)
+        // The cache is already sored by sprites' x-positions, so we can draw and overwrite sprites in the REVERSE order of this vector
+        for sprite in self.scanline_sprite_cache.iter().rev() {
+            // Sprite data
+            let y_position = sprite[0] as usize;
+            let x_position = sprite[1] as usize;
+            let tile_index = sprite[2] as usize;
+            let attributes = sprite[3];
+
+            let tile_data: Tile = self.copy_from_tile_set(tile_index);
+            let row_data: [Pixel; 8] = tile_data[(y_position % 8) as usize];
+            // Attempt to draw to row_buffer
+            for dx in 0..8 {
+                row_buffer[x_position + dx] = Some(row_data[dx]);
+            }
+        }
+    }
+
     fn scanline_render(&mut self) {
-        println!("{}", self.bg_palette);
         // Scanline background
         let mut bg_buffer: [Pixel; 32 * 8] = [Pixel::Three; 32 * 8];
         self.scanline_background(&mut bg_buffer);
         // Scanline sprites
+        let mut sprite_buffer: [Option<Pixel>; SCREEN_WIDTH] = [None; SCREEN_WIDTH];
+        self.scanline_sprites(&mut sprite_buffer);
         // Scanline window
 
         // Rotate buffer to simulate starting at SCX
@@ -542,21 +574,36 @@ impl PPU {
         let background = &bg_buffer[0..SCREEN_WIDTH];
 
         // Merge scanlines into final result to be displayed
-        for (index, pixel) in background.iter().enumerate() {
-            //let (r, g, b) = self.decode_bg_pixel(*pixel);
-            
-            let (r, g, b) = match pixel {
-                Pixel::Three => (255, 255, 255),
-                Pixel::Two => (255, 0, 0),
-                Pixel::One => (0, 255, 0),
-                Pixel::Zero => (0, 0, 0),
-            };
-            
+        for (index, bg_pixel) in background.iter().enumerate() {
+            let (mut r, mut g, mut b) = self.decode_bg_pixel(*bg_pixel);
+            let sprite_pixel = sprite_buffer[index];
+            if let Some(pixel) = sprite_pixel {
+                (r, g, b) = self.decode_pixel(pixel, self.ob_palette_1, true);
+            }
 
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 0] = r;
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 1] = g;
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 2] = b;
         }
+    }
+
+    fn build_sprite_cache(&mut self) {
+        self.scanline_sprite_cache = Vec::with_capacity(10);
+        for sprite in self.oam {
+            let y_position = sprite[0];
+            let x_position = sprite[1];
+
+            if x_position > 0
+                && self.ly + 16 >= y_position
+                && self.ly + 16 < y_position + self.get_sprite_height()
+                && self.scanline_sprite_cache.len() < 10
+            {
+                self.scanline_sprite_cache.push(sprite);
+            }
+        }
+
+        // Sort by x-position
+        self.scanline_sprite_cache.sort_by(|a, b| a[1].cmp(&b[1]));
     }
 
     pub fn tick(&mut self, _cycles: u16) -> Option<Interrupt> {
@@ -584,6 +631,7 @@ impl PPU {
                 if self.mode_cycles < 80 {
                     //println!("\tOAM");
                     // OAM
+                    self.build_sprite_cache();
                     raised_interrupt = raised_interrupt.or(self.set_mode(Mode::OAM));
                 } else if self.mode_cycles < (80 + 172) {
                     //println!("\tline render");
@@ -631,24 +679,30 @@ impl PPU {
         }
     }
 
+    // Note: not currently being utilized
     fn decode_bg_pixel(&self, pixel: Pixel) -> (u8, u8, u8) {
         self.decode_pixel(pixel, self.bg_palette, false)
     }
 
+    // Note: not currently being utilized
     fn decode_pixel(&self, pixel: Pixel, pallete: u8, transparent: bool) -> (u8, u8, u8) {
         let value = match pixel {
             Pixel::Zero => {
                 if transparent {
                     0
-                }else {
+                } else {
                     pallete & 0b11
-                }},
+                }
+            }
             Pixel::One => (pallete & 0b1100) >> 2,
             Pixel::Two => pallete & 0b11_0000 >> 4,
             Pixel::Three => pallete & 0b1100_0000 >> 6,
         };
 
-        (value, value, value)
+        let new_pixel = Pixel::from(value);
+        let color = Color::from(new_pixel);
+
+        (color.r, color.g, color.b)
     }
 }
 

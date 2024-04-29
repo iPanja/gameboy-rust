@@ -77,24 +77,7 @@ impl GameBoy {
     }
 
     pub fn export_display(&mut self, buffer: &mut Vec<u8>) {
-        // Update internal frame buffer
-        /*
-        self.bus.ppu.get_display(
-            &self.bus,
-            self.bus.ram_read_byte(0xFF43),
-            self.bus.ram_read_byte(0xFF42),
-            &mut self.screen,
-        );
-        */
-
-        *buffer = self.get_display().to_vec();
-
-        // Testing - increase scanline
-        //self.bus.ppu.ly += if self.bus.ppu.ly > 0x90 - 1 { 0 } else { 1 };
-        //self.bus.ppu.ly = (self.bus.ppu.ly + 1) % 144;
-
-        // Export as vector
-        //self.convert_disply_to_vec(&self.screen, buffer);
+        *buffer = self.bus.ppu.get_display().to_vec();
     }
 
     pub fn export_tile_map_display(&mut self, buffer: &mut Vec<u8>) {
@@ -109,9 +92,6 @@ impl GameBoy {
     //
     // Display helper methods
     //
-    fn get_display(&mut self) -> &[u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3] {
-        self.bus.ppu.get_display()
-    }
 
     fn get_debug_display(&mut self) -> &[[Pixel; 128]; 256] {
         //self.bus.ram.ram[0xFF44] = 0x90; //min(self.bus.ram.ram[0xFF40] + 1, 144);
