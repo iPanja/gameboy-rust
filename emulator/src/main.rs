@@ -93,9 +93,10 @@ fn main() {
     let mut is_playing: bool = false;
     let mut tick_rate: i16 = 5;
 
-    // Sleep rate
-    let should_sleep: bool = true;
-    let sleep_time = time::Duration::from_millis(1);
+    // > Sleep rate
+    let should_sleep: bool = false;
+    //let sleep_time = time::Duration::from_millis(1);
+    let sleep_time = time::Duration::from_nanos(100);
 
     // Standard winit event loop
     event_loop.run(move |event, _, control_flow| match event {
@@ -165,7 +166,7 @@ fn main() {
             // Screen renders
             // Main display
             let mut gb_display_buffer: Vec<u8> =
-                Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT * 4);
+                Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT * 3);
             gameboy.export_display(&mut gb_display_buffer);
             match gb_display_manager.insert_or_update(
                 display.get_context(),

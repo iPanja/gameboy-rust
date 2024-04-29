@@ -1,5 +1,9 @@
 use sdl2::pixels::Color;
-use std::{fmt, fs::OpenOptions, io::prelude::*};
+use std::{
+    fmt,
+    fs::OpenOptions,
+    io::{empty, prelude::*},
+};
 
 use crate::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
@@ -427,7 +431,7 @@ impl PPU {
         }
     }
 
-    fn get_background_map(&self, buffer: &mut [Tile; 360]) {
+    fn wrong_get_background_map(&self, buffer: &mut [Tile; 360]) {
         let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
             0 => &self.tile_map_1,
             _ => &self.tile_map_2,
@@ -436,7 +440,7 @@ impl PPU {
         *buffer = [empty_tile(); 20 * 18];
         // Background consists of 32x32 tiles, or 256x256 pixels
         // The viewport (Game Boy screen) can only show 20x18 tiles (160x144 pixels)
-        // let start_index = (self.scx + self.scy * 20) as usize;
+        // let start_index = (self.scx.8 + (self.scy.8 * 20));
         let start_index = (((self.scx as u16) / 8) + ((self.scy as u16) / 8) * 20) as usize;
         let end_index: usize = start_index + (20 * 18);
 
@@ -509,9 +513,72 @@ impl PPU {
     //  Pixel FIFO
     //
 
+    // Fetch a row (SCREEN_WDITH) of pixels at the current LY
+    // This takes into account the scroll registers (SCX, SCY) as well
+    fn scanline_background(&self, row_buffer: &mut [Pixel; 32 * 8]) {
+        // Select appropriate background tile map
+        let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
+            0 => &self.tile_map_1,
+            _ => &self.tile_map_2,
+        };
+
+        // Retrieve row of tiles
+        let bg_tm_y = (self.scy as usize + self.ly as usize) / 8; // Background Tile Map Y
+
+        // We are returning the entire row from the background map (32 tiles worth of pixels)
+        for tile in 0..32 {
+            // Loop through entire row
+            // Find x position in that row to retrieve (account for the viewport wrapping around the screen) the tile ID
+            let tile_index = bg_map[(bg_tm_y * 32 + tile) % (32 * 32)];
+
+            // Access data of that tile ID (depends on current address mode)
+            let tile_data = match self.get_address_mode() {
+                0x8000 => self.tile_set[tile_index as usize],
+                _ => self.tile_set[(tile_index as i8 as i16 + 128) as usize],
+            };
+
+            // A tile is an 8x8 grid of pixels
+            // Find which row of the tile we want to display
+            let row_index: usize = (self.scy as usize + self.ly as usize) % 8;
+            let tile_row_data = tile_data[row_index];
+
+            // Load that row into the buffer
+            for dx in 0..8 {
+                row_buffer[(tile as usize) * 8 + dx] = tile_row_data[dx];
+            }
+        }
+    }
+
     fn scanline_render(&mut self) {
+        // Scanline background
+        let mut bg_buffer: [Pixel; 32 * 8] = [Pixel::Three; 32 * 8];
+        self.scanline_background(&mut bg_buffer);
+        // Scanline sprites
+        // Scanline window
+
+        // Rotate buffer to simulate starting at SCX
+        bg_buffer.rotate_left(self.scx as usize);
+        // Trim to screen-width (since scanline_background returns 32 tiles of pixels from the background, and the viewport only supports 20 tiles of pixels in a row)
+        let background = &bg_buffer[0..SCREEN_WIDTH];
+
+        // Merge scanlines into final result to be displayed
+        for (index, pixel) in background.iter().enumerate() {
+            let (r, g, b) = match pixel {
+                Pixel::Three => (255, 255, 255),
+                Pixel::Two => (255, 0, 0),
+                Pixel::One => (0, 255, 0),
+                Pixel::Zero => (0, 0, 0),
+            };
+
+            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 0] = r;
+            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 1] = g;
+            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 2] = b;
+        }
+    }
+
+    fn old_scanline_render(&mut self) {
         let mut bg_tile_buffer: [Tile; 360] = [empty_tile(); 360];
-        self.get_background_map(&mut bg_tile_buffer);
+        self.wrong_get_background_map(&mut bg_tile_buffer);
 
         let mut row_buffer: [Pixel; SCREEN_WIDTH] = [Pixel::Three; SCREEN_WIDTH];
 
