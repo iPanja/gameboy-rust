@@ -431,27 +431,6 @@ impl PPU {
         }
     }
 
-    fn wrong_get_background_map(&self, buffer: &mut [Tile; 360]) {
-        let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
-            0 => &self.tile_map_1,
-            _ => &self.tile_map_2,
-        };
-
-        *buffer = [empty_tile(); 20 * 18];
-        // Background consists of 32x32 tiles, or 256x256 pixels
-        // The viewport (Game Boy screen) can only show 20x18 tiles (160x144 pixels)
-        // let start_index = (self.scx.8 + (self.scy.8 * 20));
-        let start_index = (((self.scx as u16) / 8) + ((self.scy as u16) / 8) * 20) as usize;
-        let end_index: usize = start_index + (20 * 18);
-
-        for (i, tile_id) in bg_map[start_index..end_index].iter().enumerate() {
-            buffer[i] = match self.get_address_mode() {
-                0x8000 => self.tile_set[*tile_id as usize],
-                _ => self.tile_set[(*tile_id as i8 as i16 + 128) as usize],
-            };
-        }
-    }
-
     pub fn get_display(&self) -> &[u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3] {
         &self.screen_buffer
     }
@@ -510,7 +489,7 @@ impl PPU {
     }
 
     //
-    //  Pixel FIFO
+    //  Pixel Scanline
     //
 
     // Fetch a row (SCREEN_WDITH) of pixels at the current LY
@@ -550,6 +529,7 @@ impl PPU {
     }
 
     fn scanline_render(&mut self) {
+        println!("{}", self.bg_palette);
         // Scanline background
         let mut bg_buffer: [Pixel; 32 * 8] = [Pixel::Three; 32 * 8];
         self.scanline_background(&mut bg_buffer);
@@ -563,61 +543,19 @@ impl PPU {
 
         // Merge scanlines into final result to be displayed
         for (index, pixel) in background.iter().enumerate() {
+            //let (r, g, b) = self.decode_bg_pixel(*pixel);
+            
             let (r, g, b) = match pixel {
                 Pixel::Three => (255, 255, 255),
                 Pixel::Two => (255, 0, 0),
                 Pixel::One => (0, 255, 0),
                 Pixel::Zero => (0, 0, 0),
             };
+            
 
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 0] = r;
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 1] = g;
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 2] = b;
-        }
-    }
-
-    fn old_scanline_render(&mut self) {
-        let mut bg_tile_buffer: [Tile; 360] = [empty_tile(); 360];
-        self.wrong_get_background_map(&mut bg_tile_buffer);
-
-        let mut row_buffer: [Pixel; SCREEN_WIDTH] = [Pixel::Three; SCREEN_WIDTH];
-
-        // Position in screen/display
-        let screen_y = (self.scy as u16 + self.ly as u16) % SCREEN_HEIGHT as u16;
-        let screen_x = self.scx as u16;
-
-        // Convert to tilemap indexes
-        let tile_map_y = (screen_y / 8) as usize;
-        let tile_row = (screen_y - ((screen_y / 8) * 8)) as usize;
-        let initial_tile_map_x = screen_x / 8;
-
-        for tile in 0..(SCREEN_WIDTH / 8 as usize) {
-            // ...
-            let tile_map_x =
-                ((initial_tile_map_x + tile as u16) % (SCREEN_WIDTH / 8) as u16) as usize;
-            let inline_index = (tile_map_y * (SCREEN_WIDTH / 8)) + tile_map_x;
-            let tile_data = bg_tile_buffer[inline_index];
-            let row_data = tile_data[tile_row];
-
-            for dx in 0..8 {
-                row_buffer[(tile * 8) + dx] = row_data[dx];
-            }
-        }
-
-        // Row buffer now populated => render it into current screen buffer
-        for (i, pixel) in row_buffer.iter().enumerate() {
-            let (r, g, b) = match *pixel {
-                Pixel::Three => (255, 255, 255),
-                Pixel::Two => (255, 0, 0),
-                Pixel::One => (0, 255, 0),
-                Pixel::Zero => (0, 0, 0),
-            };
-
-            let row_offset: usize = (self.ly as usize) * SCREEN_WIDTH * 3;
-
-            self.screen_buffer[row_offset + (i * 3)] = r;
-            self.screen_buffer[row_offset + (i * 3) + 1] = g;
-            self.screen_buffer[row_offset + (i * 3) + 2] = b;
         }
     }
 
@@ -691,6 +629,26 @@ impl PPU {
             self.stat &= !0b10;
             None
         }
+    }
+
+    fn decode_bg_pixel(&self, pixel: Pixel) -> (u8, u8, u8) {
+        self.decode_pixel(pixel, self.bg_palette, false)
+    }
+
+    fn decode_pixel(&self, pixel: Pixel, pallete: u8, transparent: bool) -> (u8, u8, u8) {
+        let value = match pixel {
+            Pixel::Zero => {
+                if transparent {
+                    0
+                }else {
+                    pallete & 0b11
+                }},
+            Pixel::One => (pallete & 0b1100) >> 2,
+            Pixel::Two => pallete & 0b11_0000 >> 4,
+            Pixel::Three => pallete & 0b1100_0000 >> 6,
+        };
+
+        (value, value, value)
     }
 }
 
