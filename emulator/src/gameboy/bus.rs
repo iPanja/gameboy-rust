@@ -52,12 +52,29 @@ impl Bus {
                 self.ppu
                     .write_byte((address - 0x5200) as usize, address as usize, byte)
             } // PPU - OAM
-            0xFF40..=0xFF4B => {
+            0xFF40..=0xFF45 => {
                 self.ppu
                     .write_byte((address - 0xFF40) as usize, address as usize, byte)
-            } // PPU - Internal Registers
+            }
+            0xFF46 => self.dma_transfer(address),
+            0xFF47..=0xFF4B => {
+                self.ppu
+                    .write_byte((address - 0xFF40) as usize, address as usize, byte)
+            }
+            /*0xFF40..=0xFF4B => {
+                self.ppu
+                    .write_byte((address - 0xFF40) as usize, address as usize, byte)
+            }*/ // PPU - Internal Registers
             0xFF04..=0xFF07 => self.timer.write_byte((address - 0xFF04) as usize, byte), // Timer and Divider Registers
             _ => self.ram.write_byte(address, byte),
+        }
+    }
+
+    fn dma_transfer(&mut self, address: u16) {
+        let real_addr = address << 8;
+        for index in 0..0xA0 {
+            let value = self.ram_read_byte(real_addr + index);
+            self.ram_write_byte(0xFE00 + index, value);
         }
     }
 

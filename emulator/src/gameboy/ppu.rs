@@ -22,17 +22,17 @@ pub struct PPU {
     raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
     oam: [Sprite; 40],   // [[u8; 4]; 40]
     // IO Registers 0xFF40-0xFF4B
-    lcdc: u8,         // PPU control register - 0xFF40
-    stat: u8,         // PPU status register - 0xFF41
-    scy: u8,          // Vertical scroll register - 0xFF42
-    scx: u8,          // Horizontal scroll register - 0xFF43
-    pub ly: u8,       // Scanline register - 0xFF44
-    lyc: u8,          // LY Compare - 0xFF45
-    bg_palette: u8,   // Background color palette - 0xFF47
-    ob_palette_1: u8, // Object color palette 1 - 0xFF48
-    ob_palette_2: u8, // Object color palette 2 - 0xFF49
-    wy: u8,           // Window Y position - 0xFF4A
-    wx: u8,           // Window X position - 0xFF4B
+    lcdc: u8,           // PPU control register - 0xFF40
+    stat: u8,           // PPU status register - 0xFF41
+    scy: u8,            // Vertical scroll register - 0xFF42
+    scx: u8,            // Horizontal scroll register - 0xFF43
+    pub ly: u8,         // Scanline register - 0xFF44
+    lyc: u8,            // LY Compare - 0xFF45
+    pub bg_palette: u8, // Background color palette - 0xFF47
+    ob_palette_1: u8,   // Object color palette 1 - 0xFF48
+    ob_palette_2: u8,   // Object color palette 2 - 0xFF49
+    wy: u8,             // Window Y position - 0xFF4A
+    wx: u8,             // Window X position - 0xFF4B
     // Internal data structures
     mode_cycles: u16,
     scanline_sprite_cache: Vec<Sprite>,
@@ -82,8 +82,8 @@ impl std::convert::From<Pixel> for Color {
     fn from(pixel: Pixel) -> Color {
         match pixel {
             Pixel::Three => Color::RGB(0, 0, 0), // Black
-            Pixel::One => Color::RGB(255, 0, 0),
-            Pixel::Two => Color::RGB(0, 255, 0),
+            Pixel::Two => Color::RGB(85, 85, 85),
+            Pixel::One => Color::RGB(170, 170, 170),
             Pixel::Zero => Color::RGB(255, 255, 255), // White
         }
     }
@@ -92,8 +92,8 @@ impl std::convert::From<Pixel> for u8 {
     fn from(pixel: Pixel) -> u8 {
         match pixel {
             Pixel::Three => 0b11,
-            Pixel::One => 0b10,
-            Pixel::Two => 0b01,
+            Pixel::Two => 0b10,
+            Pixel::One => 0b01,
             Pixel::Zero => 0b00,
         }
     }
@@ -102,8 +102,8 @@ impl std::convert::From<u8> for Pixel {
     fn from(byte: u8) -> Pixel {
         match byte {
             0b11 => Pixel::Three,
-            0b10 => Pixel::One,
-            0b01 => Pixel::Two,
+            0b10 => Pixel::Two,
+            0b01 => Pixel::One,
             _ => Pixel::Zero,
         }
     }
@@ -561,7 +561,7 @@ impl PPU {
 
     fn scanline_render(&mut self) {
         // Scanline background
-        let mut bg_buffer: [Pixel; 32 * 8] = [Pixel::Three; 32 * 8];
+        let mut bg_buffer: [Pixel; 32 * 8] = [Pixel::Zero; 32 * 8];
         self.scanline_background(&mut bg_buffer);
         // Scanline sprites
         let mut sprite_buffer: [Option<Pixel>; SCREEN_WIDTH] = [None; SCREEN_WIDTH];
@@ -576,10 +576,13 @@ impl PPU {
         // Merge scanlines into final result to be displayed
         for (index, bg_pixel) in background.iter().enumerate() {
             let (mut r, mut g, mut b) = self.decode_bg_pixel(*bg_pixel);
+
+            /*
             let sprite_pixel = sprite_buffer[index];
             if let Some(pixel) = sprite_pixel {
-                (r, g, b) = self.decode_pixel(pixel, self.ob_palette_1, true);
+                (r, g, b) = self.decode_pixel_color(pixel, self.ob_palette_1, true);
             }
+            */
 
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 0] = r;
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 1] = g;
@@ -635,6 +638,7 @@ impl PPU {
                     raised_interrupt = raised_interrupt.or(self.set_mode(Mode::OAM));
                 } else if self.mode_cycles < (80 + 172) {
                     //println!("\tline render");
+                    //println!("bg: {:#08b}", self.bg_palette);
                     self.scanline_render();
                     raised_interrupt = raised_interrupt.or(self.set_mode(Mode::Drawing));
                 } else if self.mode_cycles < 456 {
@@ -681,26 +685,18 @@ impl PPU {
 
     // Note: not currently being utilized
     fn decode_bg_pixel(&self, pixel: Pixel) -> (u8, u8, u8) {
-        self.decode_pixel(pixel, self.bg_palette, false)
+        self.decode_pixel_color(pixel, self.bg_palette, false)
     }
 
     // Note: not currently being utilized
-    fn decode_pixel(&self, pixel: Pixel, pallete: u8, transparent: bool) -> (u8, u8, u8) {
-        let value = match pixel {
-            Pixel::Zero => {
-                if transparent {
-                    0
-                } else {
-                    pallete & 0b11
-                }
-            }
-            Pixel::One => (pallete & 0b1100) >> 2,
-            Pixel::Two => pallete & 0b11_0000 >> 4,
-            Pixel::Three => pallete & 0b1100_0000 >> 6,
+    fn decode_pixel_color(&self, pixel: Pixel, pallete: u8, transparent: bool) -> (u8, u8, u8) {
+        let bits = match pixel {
+            Pixel::Three => (pallete >> 6) & 0x3,
+            Pixel::Two => (pallete >> 4) & 0x3,
+            Pixel::One => (pallete >> 2) & 0x3,
+            Pixel::Zero => (pallete >> 0) & 0x3,
         };
-
-        let new_pixel = Pixel::from(value);
-        let color = Color::from(new_pixel);
+        let color = Color::from(Pixel::from(bits as u8));
 
         (color.r, color.g, color.b)
     }

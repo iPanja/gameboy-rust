@@ -41,9 +41,11 @@ fn main() {
     let mut bootstrap_buffer: Vec<u8> = Vec::new();
     let mut rom_buffer: Vec<u8> = Vec::new();
 
-    let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
+    //let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
+    //let mut rom = std::fs::File::open("../roms/individual/07-jr,jp,call,ret,rst.gb").expect("INVALID ROM");
     let mut rom = std::fs::File::open("../roms/Dr. Mario (JU) (V1.1).gb").expect("INVALID ROM");
-    bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
+    //let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
+    //bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
     // Create emulator
@@ -109,7 +111,12 @@ fn main() {
             // Tick emulator
             {
                 if is_playing {
-                    is_playing = !gameboy.tick_bp(Some(&breakpoints));
+                    for _ in 0..tick_rate {
+                        is_playing = !gameboy.tick_bp(Some(&breakpoints));
+                        if !is_playing {
+                            break;
+                        }
+                    }
                 }
                 if should_sleep & is_playing {
                     thread::sleep(sleep_time);
@@ -409,44 +416,35 @@ fn render_gameboy_instruction_stepper(
 
                         let mut text = format!("");
 
-                        if let Ok((cycles, bytes_consumed)) = gameboy::instruction::parse_opcode(
-                            opcode, next_byte, next_word, &mut text,
-                        ) {
-                            /*
-                            for col in 0..3 {
-                                if pc_addr == gameboy.cpu.registers.pc {
-                                    ui.table_set_bg_color_with_column(
-                                        TableBgTarget::all(),
-                                        ImColor32::from_rgba(255, 0, 0, 125),
-                                        col,
-                                    );
-                                }
-                            }
-                            */
-                            let text: [String; 4] = [
-                                format!("0x{:04X}", pc_addr),
-                                match bytes_consumed {
-                                    1 => format!("{:02X}", opcode),
-                                    2 => format!("{:02X}\t{:02X}", opcode, next_byte),
-                                    _ => format!("{:02X}\t{:04X}", opcode, next_word),
-                                },
-                                format!("{}", text),
-                                format!("{}", cycles),
-                            ];
+                        if !*is_playing || true {
+                            if let Ok((cycles, bytes_consumed)) = gameboy::instruction::parse_opcode(
+                                opcode, next_byte, next_word, &mut text,
+                            ) {
+                                let text: [String; 4] = [
+                                    format!("0x{:04X}", pc_addr),
+                                    match bytes_consumed {
+                                        1 => format!("{:02X}", opcode),
+                                        2 => format!("{:02X}\t{:02X}", opcode, next_byte),
+                                        _ => format!("{:02X}\t{:04X}", opcode, next_word),
+                                    },
+                                    format!("{}", text),
+                                    format!("{}", cycles),
+                                ];
 
-                            for col in 0..4 {
-                                ui.table_next_column();
-                                if pc_addr == gameboy.cpu.registers.pc {
-                                    ui.table_set_bg_color(
-                                        TableBgTarget::all(),
-                                        ImColor32::from_rgba(255, 0, 0, 125),
-                                    );
+                                for col in 0..4 {
+                                    ui.table_next_column();
+                                    if pc_addr == gameboy.cpu.registers.pc {
+                                        ui.table_set_bg_color(
+                                            TableBgTarget::all(),
+                                            ImColor32::from_rgba(255, 0, 0, 125),
+                                        );
+                                    }
+
+                                    ui.text(&text[col]);
                                 }
 
-                                ui.text(&text[col]);
+                                pc_addr = pc_addr.wrapping_add(bytes_consumed as u16);
                             }
-
-                            pc_addr = pc_addr.wrapping_add(bytes_consumed as u16);
                         }
                     }
                 }

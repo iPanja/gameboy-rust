@@ -108,17 +108,21 @@ impl GameBoy {
         buffer: &mut Vec<u8>,
     ) {
         *buffer = Vec::with_capacity(W * H);
+        let pallete = self.bus.ppu.bg_palette;
+
         for row in display {
             for pixel in row {
-                let (r, g, b) = match *pixel {
-                    Pixel::Three => (255, 255, 255),
-                    Pixel::Two => (255, 0, 0),
-                    Pixel::One => (0, 255, 0),
-                    Pixel::Zero => (0, 0, 0),
+                let bits = match pixel {
+                    Pixel::Three => (pallete >> 6) & 0x3,
+                    Pixel::Two => (pallete >> 4) & 0x3,
+                    Pixel::One => (pallete >> 2) & 0x3,
+                    Pixel::Zero => (pallete >> 0) & 0x3,
                 };
-                buffer.push(r);
-                buffer.push(g);
-                buffer.push(b);
+                let color = sdl2::pixels::Color::from(Pixel::from(bits as u8));
+
+                buffer.push(color.r);
+                buffer.push(color.g);
+                buffer.push(color.b);
             }
         }
     }

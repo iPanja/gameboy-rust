@@ -21,7 +21,7 @@ pub struct CPU {
 impl CPU {
     pub fn new() -> Self {
         CPU {
-            registers: Registers::new(), // Registers::new_post_boot_rom() ; new()
+            registers: Registers::new_post_boot_rom(), // Registers::new_post_boot_rom() ; new()
             is_halted: false,
             interrupt_action: Option::None,
             interrupts_enabled: false,
@@ -2766,6 +2766,7 @@ impl CPU {
 
     fn jump_relative(&mut self, byte: i8) {
         self.registers.pc = ((self.registers.pc as u32 as i32) + (byte as i32)) as u16;
+        //self.registers.pc = self.registers.pc.wrapping_add_signed(byte as i16);
     }
 
     // Calls
