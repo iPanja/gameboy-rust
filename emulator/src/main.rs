@@ -41,11 +41,11 @@ fn main() {
     let mut bootstrap_buffer: Vec<u8> = Vec::new();
     let mut rom_buffer: Vec<u8> = Vec::new();
 
-    //let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
+    let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/individual/07-jr,jp,call,ret,rst.gb").expect("INVALID ROM");
     let mut rom = std::fs::File::open("../roms/Dr. Mario (JU) (V1.1).gb").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
-    //bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
+    bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
     // Create emulator
@@ -339,6 +339,30 @@ fn render_gameboy_registers(ui: &mut Ui, gameboy: &mut GameBoy) {
                 ui.text(format!("IE Reg - {:#X}", gameboy.bus.ram_read_byte(0xFFFF)));
                 ui.text(format!("LY Reg - {:#X}", gameboy.bus.ram_read_byte(0xFF44)));
             }
+            // Timer internal registers
+            ui.separator();
+            if CollapsingHeader::new("Timer Registers")
+                .default_open(true)
+                .build(ui)
+            {
+                ui.text(format!(
+                    "DIV Reg - {:#X}",
+                    gameboy.bus.ram_read_byte(0xFF04)
+                ));
+                ui.text(format!(
+                    "TIMA Reg - {:#X}",
+                    gameboy.bus.ram_read_byte(0xFF05)
+                ));
+                ui.text(format!(
+                    "TMA Reg - {:#X}",
+                    gameboy.bus.ram_read_byte(0xFF06)
+                ));
+                ui.text(format!(
+                    "TAC Reg - {:#X}",
+                    gameboy.bus.ram_read_byte(0xFF07)
+                ));
+            }
+
             // Serial Port
             ui.separator();
             if CollapsingHeader::new("Serial Port")

@@ -694,35 +694,16 @@ impl PPU {
             Pixel::Three => (pallete >> 6) & 0x3,
             Pixel::Two => (pallete >> 4) & 0x3,
             Pixel::One => (pallete >> 2) & 0x3,
-            Pixel::Zero => (pallete >> 0) & 0x3,
+            Pixel::Zero => {
+                if transparent {
+                    0
+                } else {
+                    (pallete >> 0) & 0x3
+                }
+            }
         };
         let color = Color::from(Pixel::from(bits as u8));
 
         (color.r, color.g, color.b)
     }
-}
-
-fn log(s: String) {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .append(true)
-        .open("gb-vram-log")
-        .unwrap();
-
-    if let Err(e) = writeln!(file, "{}", s) {
-        eprintln!("Couldn't write to file: {}", e);
-    }
-}
-
-fn log_vec(vec: Vec<u8>) {
-    log(format!("{:?}", vec));
-    log(format!("\n"));
-}
-
-pub fn log_data(tile_set: [Tile; 384]) {
-    for tile in tile_set.iter() {
-        print!("{:?}\n", tile);
-    }
-    println!("--------------------------------\n");
 }
