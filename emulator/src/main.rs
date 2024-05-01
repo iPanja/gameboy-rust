@@ -152,7 +152,7 @@ fn main() {
                     &mut selected_breakpoint,
                     &mut tick_rate,
                     &mut is_playing,
-                )
+                );
             }
 
             // Setup for drawing
@@ -258,6 +258,7 @@ fn render_display_window(ui: &mut Ui, labels: [&str; 2], stms: [ScreenTextureMan
                 for index in 0..labels.len() {
                     TabItem::new(labels[index]).build(ui, || {
                         stms[index].show(ui);
+                        //stms[index].show_textures(ui);
                     });
                 }
             }

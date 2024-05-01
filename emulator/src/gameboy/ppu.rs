@@ -330,41 +330,9 @@ impl PPU {
         };
     }
 
-    fn get_mode(&self) -> Mode {
-        let lower = self.stat & 0b11;
-        Mode::from(lower)
-    }
-
-    fn set_mode(&mut self, new_mode: Mode) -> Option<Interrupt> {
-        self.stat &= !0b11; // Clear mode bits
-        self.stat |= u8::from(new_mode); // Set mode bits
-
-        match new_mode {
-            Mode::Drawing => None,
-            Mode::HBlank => {
-                if self.stat & 0b100 != 0 {
-                    Some(Interrupt::LCD)
-                } else {
-                    None
-                }
-            }
-            Mode::VBlank => {
-                if self.stat & 0b1000 != 0 {
-                    Some(Interrupt::LCD)
-                } else {
-                    None
-                }
-            }
-            Mode::OAM => {
-                if self.stat & 0b1_0000 != 0 {
-                    Some(Interrupt::LCD)
-                } else {
-                    None
-                }
-            }
-        }
-    }
-
+    //
+    //  VRAM Read/Write
+    //
     fn write_tile_set_data(&mut self, index: usize, byte: u8) {
         self.raw_tile_vram[index] = byte;
         // A tile is 2 bytes. 1 byte will only populate half the tile, or 4 pixels
@@ -404,8 +372,46 @@ impl PPU {
         self.oam[oam_index][byte_pos] = byte;
     }
 
-    fn can_access_memory(&mut self, mode: Mode) {
-        match mode {
+    //
+    //  Modes
+    //
+    fn get_mode(&self) -> Mode {
+        let lower = self.stat & 0b11;
+        Mode::from(lower)
+    }
+
+    fn set_mode(&mut self, new_mode: Mode) -> Option<Interrupt> {
+        self.stat &= !0b11; // Clear mode bits
+        self.stat |= u8::from(new_mode); // Set mode bits
+
+        match new_mode {
+            Mode::Drawing => None,
+            Mode::HBlank => {
+                if self.stat & 0b100 != 0 {
+                    Some(Interrupt::LCD)
+                } else {
+                    None
+                }
+            }
+            Mode::VBlank => {
+                if self.stat & 0b1000 != 0 {
+                    Some(Interrupt::LCD)
+                } else {
+                    None
+                }
+            }
+            Mode::OAM => {
+                if self.stat & 0b1_0000 != 0 {
+                    Some(Interrupt::LCD)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn can_access_memory(&mut self) {
+        match self.get_mode() {
             Mode::HBlank => todo!(),  // Can only access: VRAM, OAM, CGB palletes
             Mode::VBlank => todo!(),  // Can only access: VRAM, OAM, CGB palletes
             Mode::OAM => todo!(),     // Can only access: VRAM, CGB palletes
@@ -464,15 +470,6 @@ impl PPU {
         }
     }
 
-    pub fn load_tile_data(&self, tile_no: usize, buffer: &mut Tile) {
-        let tile: Tile = self.tile_set[tile_no];
-        for (dy, row) in tile.iter().enumerate() {
-            for (dx, pixel) in row.iter().enumerate() {
-                buffer[dy][dx] = *pixel;
-            }
-        }
-    }
-
     fn copy_from_tile_set(&self, tile_id: usize) -> Tile {
         match self.get_address_mode() {
             0x8000 => self.tile_set[tile_id as usize],
@@ -480,24 +477,8 @@ impl PPU {
         }
     }
 
-    fn decode_pixels_from_word(&self, byte1: u8, byte2: u8, buffer: &mut [Pixel; 8]) {
-        for pixel_index in 0..8 {
-            let mask = 1 << (7 - pixel_index);
-            let lsb = byte1 & mask;
-            let msb = byte2 & mask;
-            let value = match (lsb != 0, msb != 0) {
-                (true, true) => Pixel::Three,
-                (false, true) => Pixel::Two,
-                (true, false) => Pixel::One,
-                (false, false) => Pixel::Zero,
-            };
-
-            buffer[pixel_index] = value;
-        }
-    }
-
     //
-    //  Pixel Scanline
+    //  Scanline Rendering
     //
 
     // Fetch a row (SCREEN_WDITH) of pixels at the current LY
@@ -577,12 +558,10 @@ impl PPU {
         for (index, bg_pixel) in background.iter().enumerate() {
             let (mut r, mut g, mut b) = self.decode_bg_pixel(*bg_pixel);
 
-            /*
             let sprite_pixel = sprite_buffer[index];
             if let Some(pixel) = sprite_pixel {
                 (r, g, b) = self.decode_pixel_color(pixel, self.ob_palette_1, true);
             }
-            */
 
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 0] = r;
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 1] = g;
@@ -683,12 +662,10 @@ impl PPU {
         }
     }
 
-    // Note: not currently being utilized
     fn decode_bg_pixel(&self, pixel: Pixel) -> (u8, u8, u8) {
         self.decode_pixel_color(pixel, self.bg_palette, false)
     }
 
-    // Note: not currently being utilized
     fn decode_pixel_color(&self, pixel: Pixel, pallete: u8, transparent: bool) -> (u8, u8, u8) {
         let bits = match pixel {
             Pixel::Three => (pallete >> 6) & 0x3,
