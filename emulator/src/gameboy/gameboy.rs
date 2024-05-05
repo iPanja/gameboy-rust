@@ -4,7 +4,7 @@ use super::{ppu::Pixel, Bus, CPU, PPU};
 
 pub struct GameBoy {
     pub cpu: CPU,
-    pub bus: Bus,
+    pub bus: Box<Bus>,
     tile_map_screen: [[Pixel; 16 * 8]; 32 * 8],
 }
 
@@ -12,7 +12,7 @@ impl GameBoy {
     pub fn new() -> Self {
         GameBoy {
             cpu: CPU::new(),
-            bus: Bus::new(),
+            bus: Box::new(Bus::new()),
             tile_map_screen: [[Pixel::Zero; 128]; 256],
         }
     }
@@ -64,6 +64,10 @@ impl GameBoy {
 
     pub fn read_rom_at(&mut self, buffer: &Vec<u8>, addr: usize) {
         self.bus.ram_load_rom(buffer, addr);
+    }
+
+    pub fn read_boot_rom(&mut self, buffer: &Vec<u8>) {
+        self.bus.ram_load_boot_rom(buffer);
     }
 
     //

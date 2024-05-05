@@ -1,4 +1,5 @@
 pub mod bus;
+pub mod cartridge;
 pub mod cpu;
 pub mod flags_register;
 pub mod gameboy;
@@ -11,6 +12,7 @@ pub mod timer;
 pub mod ui;
 
 pub use bus::Bus;
+pub use cartridge::CartridgeHeader;
 pub use cpu::CPU;
 pub use flags_register::Flag;
 pub use flags_register::FlagsRegister;

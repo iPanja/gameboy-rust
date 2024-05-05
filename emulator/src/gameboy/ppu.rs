@@ -431,6 +431,10 @@ impl PPU {
         !(self.lcdc & 0b1000_0000 == 0)
     }
 
+    pub fn is_window_enabled(&self) -> bool {
+        !(self.lcdc & 0b0010_0000 == 0)
+    }
+
     fn get_address_mode(&self) -> u16 {
         match self.lcdc & 0x10 {
             0 => 0x8800,
@@ -527,17 +531,50 @@ impl PPU {
         for sprite in self.scanline_sprite_cache.iter().rev() {
             // Sprite data
             let y_position = sprite[0] as usize;
-            let x_position = sprite[1] as usize;
+            let x_position = sprite[1] as usize - self.scx as usize;
             let tile_index = sprite[2] as usize;
             let attributes = sprite[3];
 
-            let tile_data: Tile = self.copy_from_tile_set(tile_index);
-            let row_data: [Pixel; 8] = tile_data[(y_position % 8) as usize];
-            // Attempt to draw to row_buffer
-            for dx in 0..8 {
-                row_buffer[x_position + dx] = Some(row_data[dx]);
+            if sprite[1] - 8 < self.scx || x_position > 160 {
+                continue;
+            } else {
+                let tile_data: Tile = self.copy_from_tile_set(tile_index);
+                let row_data: [Pixel; 8] = tile_data[(y_position % 8) as usize];
+                // Attempt to draw to row_buffer
+                for dx in 0..8 {
+                    row_buffer[x_position + dx] = Some(row_data[dx]);
+                }
             }
         }
+    }
+
+    fn scanline_window(&self, row_buffer: &mut [Option<Pixel>; SCREEN_WIDTH]) {
+        *row_buffer = [None; SCREEN_WIDTH];
+
+        /*
+        if self.ly < self.wy || !self.is_window_enabled() {
+            return;
+        }
+
+        let window_y = self.wy;
+        let window_x = self.wx - 7;
+
+        let window_row = (self.ly - window_y) / 8;
+
+        for tile in 0..32 {
+            if tile * 8 >= window_x as usize {
+                let window_col: u8 = (tile as u8) * 8 - window_x;
+                let tile_index = (window_row * 32 + window_col); // % (32 * 32);
+
+                let tile_data: Tile = self.copy_from_tile_set(tile_index as usize);
+                let row_data: [Pixel; 8] = tile_data[((self.ly - window_y) % 8) as usize];
+
+                for dx in 0..8 {
+                    row_buffer[tile * 8 + dx] = Some(row_data[dx]);
+                }
+            }
+        }
+        */
     }
 
     fn scanline_render(&mut self) {
@@ -548,6 +585,8 @@ impl PPU {
         let mut sprite_buffer: [Option<Pixel>; SCREEN_WIDTH] = [None; SCREEN_WIDTH];
         self.scanline_sprites(&mut sprite_buffer);
         // Scanline window
+        let mut window_buffer: [Option<Pixel>; SCREEN_WIDTH] = [None; SCREEN_WIDTH];
+        self.scanline_window(&mut window_buffer);
 
         // Rotate buffer to simulate starting at SCX
         bg_buffer.rotate_left(self.scx as usize);
@@ -560,6 +599,11 @@ impl PPU {
 
             let sprite_pixel = sprite_buffer[index];
             if let Some(pixel) = sprite_pixel {
+                (r, g, b) = self.decode_pixel_color(pixel, self.ob_palette_1, true);
+            }
+
+            let window_pixel = window_buffer[index];
+            if let Some(pixel) = window_pixel {
                 (r, g, b) = self.decode_pixel_color(pixel, self.ob_palette_1, true);
             }
 

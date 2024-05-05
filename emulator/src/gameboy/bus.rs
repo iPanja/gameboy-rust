@@ -1,10 +1,18 @@
-use super::{Interrupt, Memory, Timer, PPU};
+use super::{
+    cartridge::{MBC, MBC0},
+    Interrupt, Memory, Timer, PPU,
+};
+
+const BOOT_ROM_SIZE: u16 = 0x100;
 
 pub struct Bus {
     ram: Memory,
     pub ppu: PPU,
     pub timer: Timer,
     pub dbg: Vec<char>,
+    pub mbc: Box<dyn MBC>,
+    is_boot_rom_mapped: bool,
+    boot_rom: [u8; BOOT_ROM_SIZE as usize],
 }
 
 impl Bus {
@@ -14,6 +22,9 @@ impl Bus {
             ppu: PPU::new(),
             timer: Timer::new(),
             dbg: Vec::new(),
+            mbc: Box::new(MBC0::new()),
+            is_boot_rom_mapped: false,
+            boot_rom: [0; BOOT_ROM_SIZE as usize],
         }
     }
 
@@ -23,6 +34,14 @@ impl Bus {
         }
 
         match address {
+            0x0000..=0x7FFF => {
+                if self.is_boot_rom_mapped && address < BOOT_ROM_SIZE {
+                    self.boot_rom[address as usize]
+                } else {
+                    self.mbc.read_byte(address)
+                }
+            }
+
             0x8000..=0x9FFF => self // 0x97FF
                 .ppu
                 .read_byte((address - 0x8000) as usize, address as usize), // PPU - Tile RAM & Background Map (Division at 0x9800)
@@ -43,6 +62,9 @@ impl Bus {
         }
 
         match address {
+            0x0000..=0x7FFF => self.mbc.write_byte(address, byte),
+            0xFF50 => self.is_boot_rom_mapped = false,
+
             0x8000..=0x9FFF => {
                 // 0x97FF
                 self.ppu
@@ -89,8 +111,16 @@ impl Bus {
 
     pub fn ram_load_rom(&mut self, buffer: &Vec<u8>, addr: usize) {
         for i in 0..buffer.len() {
-            self.ram_write_byte((Memory::START_ADDR + i + addr) as u16, buffer[i]);
+            //self.ram_write_byte((Memory::START_ADDR + i + addr) as u16, buffer[i]);
+            self.mbc.write_byte((addr + i) as u16, buffer[i]);
         }
+    }
+
+    pub fn ram_load_boot_rom(&mut self, buffer: &Vec<u8>) {
+        for i in 0..buffer.len() {
+            self.boot_rom[i] = buffer[i];
+        }
+        self.is_boot_rom_mapped = true;
     }
 
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {

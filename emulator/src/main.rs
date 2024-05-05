@@ -43,7 +43,7 @@ fn main() {
 
     let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/individual/07-jr,jp,call,ret,rst.gb").expect("INVALID ROM");
-    let mut rom = std::fs::File::open("../roms/Dr. Mario (JU) (V1.1).gb").expect("INVALID ROM");
+    let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
@@ -51,7 +51,8 @@ fn main() {
     // Create emulator
     let mut gameboy = GameBoy::new();
     gameboy.read_rom(&rom_buffer);
-    gameboy.read_rom(&bootstrap_buffer);
+    //gameboy.read_rom(&bootstrap_buffer);
+    gameboy.read_boot_rom(&bootstrap_buffer);
 
     // Common setup for creating a winit window and imgui context, not specifc
     // to this renderer at all except that glutin is used to create the window
