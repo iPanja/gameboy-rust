@@ -1,5 +1,6 @@
 use sdl2::pixels::Color;
 use std::{
+    collections::HashSet,
     fmt,
     fs::OpenOptions,
     io::{empty, prelude::*},
@@ -380,34 +381,34 @@ impl PPU {
         Mode::from(lower)
     }
 
-    fn set_mode(&mut self, new_mode: Mode) -> Option<Interrupt> {
+    fn set_mode(&mut self, new_mode: Mode) -> Vec<Interrupt> {
+        let mut interrupts: HashSet<Interrupt> = HashSet::new();
+
         self.stat &= !0b11; // Clear mode bits
         self.stat |= u8::from(new_mode); // Set mode bits
 
         match new_mode {
-            Mode::Drawing => None,
+            Mode::Drawing => (),
             Mode::HBlank => {
                 if self.stat & 0b100 != 0 {
-                    Some(Interrupt::LCD)
-                } else {
-                    None
+                    interrupts.insert(Interrupt::LCD);
                 }
             }
             Mode::VBlank => {
+                interrupts.insert(Interrupt::VBlank);
+
                 if self.stat & 0b1000 != 0 {
-                    Some(Interrupt::LCD)
-                } else {
-                    None
+                    interrupts.insert(Interrupt::LCD);
                 }
             }
             Mode::OAM => {
                 if self.stat & 0b1_0000 != 0 {
-                    Some(Interrupt::LCD)
-                } else {
-                    None
+                    interrupts.insert(Interrupt::LCD);
                 }
             }
-        }
+        };
+
+        interrupts.iter().map(|i| *i).collect()
     }
 
     fn can_access_memory(&mut self) {
@@ -433,6 +434,10 @@ impl PPU {
 
     pub fn is_window_enabled(&self) -> bool {
         !(self.lcdc & 0b0010_0000 == 0)
+    }
+
+    pub fn is_obj_enabled(&self) -> bool {
+        !(self.lcdc & 0b0000_0010 == 0)
     }
 
     fn get_address_mode(&self) -> u16 {
@@ -488,6 +493,12 @@ impl PPU {
     // Fetch a row (SCREEN_WDITH) of pixels at the current LY
     // Does NOT take into account the scroll registers (SCX, SCY) as well
     fn scanline_background(&self, row_buffer: &mut [Pixel; 32 * 8]) {
+        // LCDC 0 bit - BG & Window enable (DMG)
+        if self.lcdc & 0x1 == 0 {
+            *row_buffer = [Pixel::Zero; 32 * 8]; // White background;
+            return;
+        }
+
         // Select appropriate background tile map
         let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
             0 => &self.tile_map_1,
@@ -526,6 +537,10 @@ impl PPU {
         // Clear row buffer - ensuring we can detect empty tiles properly
         *row_buffer = [None; SCREEN_WIDTH];
 
+        if !self.is_obj_enabled() {
+            return;
+        }
+
         // Check all cached sprites (max 10) that occur on this scanline (self.ly)
         // The cache is already sored by sprites' x-positions, so we can draw and overwrite sprites in the REVERSE order of this vector
         for sprite in self.scanline_sprite_cache.iter().rev() {
@@ -536,8 +551,10 @@ impl PPU {
             let attributes = sprite[3];
 
             if sprite[1] - 8 < self.scx || x_position > 160 {
+                //println!("sprite off screen");
                 continue;
             } else {
+                //println!("drawing sprite!");
                 let tile_data: Tile = self.copy_from_tile_set(tile_index);
                 let row_data: [Pixel; 8] = tile_data[(y_position % 8) as usize];
                 // Attempt to draw to row_buffer
@@ -551,8 +568,7 @@ impl PPU {
     fn scanline_window(&self, row_buffer: &mut [Option<Pixel>; SCREEN_WIDTH]) {
         *row_buffer = [None; SCREEN_WIDTH];
 
-        /*
-        if self.ly < self.wy || !self.is_window_enabled() {
+        if self.ly < self.wy || !self.is_window_enabled() || self.lcdc & 0x1 == 0 {
             return;
         }
 
@@ -574,7 +590,6 @@ impl PPU {
                 }
             }
         }
-        */
     }
 
     fn scanline_render(&mut self) {
@@ -632,12 +647,12 @@ impl PPU {
         self.scanline_sprite_cache.sort_by(|a, b| a[1].cmp(&b[1]));
     }
 
-    pub fn tick(&mut self, _cycles: u16) -> Option<Interrupt> {
-        let mut raised_interrupt: Option<Interrupt> = None;
+    pub fn tick(&mut self, _cycles: u16) -> Vec<Interrupt> {
+        let mut raised_interrupts: Vec<Interrupt> = Vec::new();
 
         if !self.is_lcd_enabled() {
             //println!("LCD DISABLED!");
-            return None;
+            return raised_interrupts;
         }
 
         self.mode_cycles += _cycles;
@@ -658,30 +673,35 @@ impl PPU {
                     //println!("\tOAM");
                     // OAM
                     self.build_sprite_cache();
-                    raised_interrupt = raised_interrupt.or(self.set_mode(Mode::OAM));
+                    raised_interrupts.append(&mut self.set_mode(Mode::OAM));
                 } else if self.mode_cycles < (80 + 172) {
                     //println!("\tline render");
                     //println!("bg: {:#08b}", self.bg_palette);
                     self.scanline_render();
-                    raised_interrupt = raised_interrupt.or(self.set_mode(Mode::Drawing));
+                    raised_interrupts.append(&mut self.set_mode(Mode::Drawing));
                 } else if self.mode_cycles < 456 {
                     //println!("\thblank");
-                    raised_interrupt = raised_interrupt.or(self.set_mode(Mode::HBlank));
+                    raised_interrupts.append(&mut self.set_mode(Mode::HBlank));
                 } else {
                     //println!("\t=> next line!");
                     self.ly = (self.ly + 1) % 154;
-                    raised_interrupt = raised_interrupt.or(self.set_mode(Mode::OAM));
-                    raised_interrupt = raised_interrupt.or(self.check_lyc_interrupt());
+                    raised_interrupts.append(&mut self.set_mode(Mode::OAM));
+
+                    if let Some(interrupt) = self.check_lyc_interrupt() {
+                        raised_interrupts.push(interrupt);
+                    }
                     self.mode_cycles = self.mode_cycles % 456;
                 }
             } else {
                 //println!("\tVBLANK");
                 // VBlank Lines
-                self.set_mode(Mode::VBlank);
+                raised_interrupts.append(&mut self.set_mode(Mode::VBlank));
                 if self.mode_cycles > 456 {
                     self.ly = (self.ly + 1) % 154;
 
-                    raised_interrupt = raised_interrupt.or(self.check_lyc_interrupt());
+                    if let Some(interrupt) = self.check_lyc_interrupt() {
+                        raised_interrupts.push(interrupt);
+                    }
 
                     if self.ly < 144 {
                         self.set_mode(Mode::OAM);
@@ -693,7 +713,7 @@ impl PPU {
         }
 
         // Return possible (STAT/LCD) interrupt
-        raised_interrupt
+        raised_interrupts
     }
 
     fn check_lyc_interrupt(&mut self) -> Option<Interrupt> {

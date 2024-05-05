@@ -88,7 +88,7 @@ pub(crate) fn parse_opcode(
         0x73 => (write!(w, "LD (HL), E",), 8, 1),
         0x74 => (write!(w, "LD (HL), H",), 8, 1),
         0x75 => (write!(w, "LD (HL), L",), 8, 1),
-        0x36 => (write!(w, "LD (HL), {}", next_byte), 12, 2),
+        0x36 => (write!(w, "LD (HL), {:#X}", next_byte), 12, 2),
         // LD A, n
         0x78 => (write!(w, "LD A, B",), 4, 1),
         0x7F => (write!(w, "LD A, A",), 4, 1),

@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
 pub enum Interrupt {
     VBlank,
     LCD,

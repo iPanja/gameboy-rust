@@ -1,6 +1,6 @@
 use super::{
     cartridge::{MBC, MBC0},
-    Interrupt, Memory, Timer, PPU,
+    interrupt, Interrupt, Memory, Timer, PPU,
 };
 
 const BOOT_ROM_SIZE: u16 = 0x100;
@@ -53,6 +53,7 @@ impl Bus {
                 .ppu
                 .read_byte((address - 0xFF40) as usize, address as usize), // PPU - Internal Registers
             0xFF04..=0xFF07 => self.timer.read_byte((address - 0xFF04) as usize), // Timer and Divider Registers
+            0xFF00 => 0xFF, //self.ram.read_byte(0xFF), // Joypad Input
             _ => self.ram.read_byte(address),
         }
     }
@@ -85,11 +86,8 @@ impl Bus {
                 self.ppu
                     .write_byte((address - 0xFF40) as usize, address as usize, byte)
             }
-            /*0xFF40..=0xFF4B => {
-                self.ppu
-                    .write_byte((address - 0xFF40) as usize, address as usize, byte)
-            }*/ // PPU - Internal Registers
             0xFF04..=0xFF07 => self.timer.write_byte((address - 0xFF04) as usize, byte), // Timer and Divider Registers
+            0xFF00 => self.ram.write_byte(0xFF, byte), // Joypad Input
             _ => self.ram.write_byte(address, byte),
         }
     }
@@ -112,10 +110,12 @@ impl Bus {
     }
 
     pub fn ram_load_rom(&mut self, buffer: &Vec<u8>, addr: usize) {
+        self.mbc.load_rom(buffer);
+        /*
         for i in 0..buffer.len() {
             //self.ram_write_byte((Memory::START_ADDR + i + addr) as u16, buffer[i]);
             self.mbc.write_byte((addr + i) as u16, buffer[i]);
-        }
+        }*/
     }
 
     pub fn ram_load_boot_rom(&mut self, buffer: &Vec<u8>) {
@@ -135,7 +135,9 @@ impl Bus {
     pub fn tick(&mut self, cycles: u8) {
         self.timer.tick(cycles);
 
-        if let Some(interrupt) = self.ppu.tick(cycles as u16) {
+        let interrupts = self.ppu.tick(cycles as u16);
+
+        for interrupt in interrupts {
             self.trigger_interrupt(interrupt);
         }
     }

@@ -337,9 +337,28 @@ fn render_gameboy_registers(ui: &mut Ui, gameboy: &mut GameBoy) {
                 .default_open(true)
                 .build(ui)
             {
-                ui.text(format!("IF Reg - {:#X}", gameboy.bus.ram_read_byte(0xFF0F)));
-                ui.text(format!("IE Reg - {:#X}", gameboy.bus.ram_read_byte(0xFFFF)));
+                ui.text(format!(
+                    "IF Reg - {:08b}",
+                    gameboy.bus.ram_read_byte(0xFF0F)
+                ));
+                ui.text(format!(
+                    "IE Reg - {:08b}",
+                    gameboy.bus.ram_read_byte(0xFFFF)
+                ));
+                ui.separator();
                 ui.text(format!("LY Reg - {:#X}", gameboy.bus.ram_read_byte(0xFF44)));
+                ui.text(format!(
+                    "LYC Reg - {:#X}",
+                    gameboy.bus.ram_read_byte(0xFF45)
+                ));
+                ui.text(format!(
+                    "LCDC Reg - {:08b}",
+                    gameboy.bus.ram_read_byte(0xFF40)
+                ));
+                ui.text(format!(
+                    "STAT Reg - {:08b}",
+                    gameboy.bus.ram_read_byte(0xFF41)
+                ));
                 ui.separator();
 
                 if let Some(c_h) = &gameboy.cartridge_header {
