@@ -41,6 +41,7 @@ impl Bus {
                     self.mbc.read_byte(address)
                 }
             }
+            0xA000..=0xBFFF => self.mbc.read_byte(address),
 
             0x8000..=0x9FFF => self // 0x97FF
                 .ppu
@@ -63,6 +64,7 @@ impl Bus {
 
         match address {
             0x0000..=0x7FFF => self.mbc.write_byte(address, byte),
+            0xA000..=0xBFFF => self.mbc.write_byte(address, byte),
             0xFF50 => self.is_boot_rom_mapped = false,
 
             0x8000..=0x9FFF => {

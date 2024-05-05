@@ -1,10 +1,11 @@
 use crate::{DEBUGGER_SCREEN_HEIGHT, SCREEN_HEIGHT, SCREEN_WIDTH};
 
-use super::{ppu::Pixel, Bus, CPU, PPU};
+use super::{ppu::Pixel, Bus, CartridgeHeader, CPU, PPU};
 
 pub struct GameBoy {
     pub cpu: CPU,
     pub bus: Box<Bus>,
+    pub cartridge_header: Option<CartridgeHeader>,
     tile_map_screen: [[Pixel; 16 * 8]; 32 * 8],
 }
 
@@ -13,6 +14,7 @@ impl GameBoy {
         GameBoy {
             cpu: CPU::new(),
             bus: Box::new(Bus::new()),
+            cartridge_header: None,
             tile_map_screen: [[Pixel::Zero; 128]; 256],
         }
     }
@@ -60,10 +62,8 @@ impl GameBoy {
     //
     pub fn read_rom(&mut self, buffer: &Vec<u8>) {
         self.bus.ram_load_rom(buffer, 0x0);
-    }
 
-    pub fn read_rom_at(&mut self, buffer: &Vec<u8>, addr: usize) {
-        self.bus.ram_load_rom(buffer, addr);
+        self.cartridge_header = Some(CartridgeHeader::new(&buffer[0x0100..=0x014F]));
     }
 
     pub fn read_boot_rom(&mut self, buffer: &Vec<u8>) {

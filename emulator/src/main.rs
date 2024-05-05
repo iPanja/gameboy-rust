@@ -136,7 +136,7 @@ fn main() {
 
             // CREATE UI
             {
-                ui.show_demo_window(&mut true);
+                //ui.show_demo_window(&mut true); - DEMO WINDOW
                 //render_gameboy_window(ui, gb_display_manager, [5.0, 450.0]);
                 render_display_window(
                     ui,
@@ -340,6 +340,19 @@ fn render_gameboy_registers(ui: &mut Ui, gameboy: &mut GameBoy) {
                 ui.text(format!("IF Reg - {:#X}", gameboy.bus.ram_read_byte(0xFF0F)));
                 ui.text(format!("IE Reg - {:#X}", gameboy.bus.ram_read_byte(0xFFFF)));
                 ui.text(format!("LY Reg - {:#X}", gameboy.bus.ram_read_byte(0xFF44)));
+                ui.separator();
+
+                if let Some(c_h) = &gameboy.cartridge_header {
+                    ui.text(format!("Cartridge Game Title: {:?}", c_h.title));
+                    ui.text(format!(
+                        "Cartridge Type Code: {:#X}",
+                        c_h.cartridge_type_code
+                    ));
+                    ui.text(format!("Cartridge ROM Code: {:#X}", c_h.rom_size_code));
+                    ui.text(format!("Cartridge RAM Code: {:#X}", c_h.ram_size_code));
+                } else {
+                    ui.text("Cartridge Game Title: N/A");
+                }
             }
             // Timer internal registers
             ui.separator();
