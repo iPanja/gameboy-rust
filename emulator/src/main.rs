@@ -14,8 +14,8 @@ use glium::{Surface, Texture2d};
 use imgui::sys::ImVec2;
 use imgui::{
     CollapsingHeader, ComboBoxFlags, Condition, Id, ImColor32, Image, InputText, InputTextFlags,
-    TabBarFlags, TabItem, TableBgTarget, TableColumnFlags, TableColumnSetup, TableFlags, TextureId,
-    Textures, Ui,
+    Key, TabBarFlags, TabItem, TableBgTarget, TableColumnFlags, TableColumnSetup, TableFlags,
+    TextureId, Textures, Ui,
 };
 use imgui_glium_renderer::Texture;
 
@@ -44,15 +44,14 @@ fn main() {
     let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/individual/07-jr,jp,call,ret,rst.gb").expect("INVALID ROM");
     let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
-    //let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
+    //let mut rom = std::fs::File::open("../roms/cpu_instrs.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
     // Create emulator
     let mut gameboy = GameBoy::new();
     gameboy.read_rom(&rom_buffer);
-    //gameboy.read_rom(&bootstrap_buffer);
-    gameboy.read_boot_rom(&bootstrap_buffer);
+    //gameboy.read_boot_rom(&bootstrap_buffer);
 
     // Common setup for creating a winit window and imgui context, not specifc
     // to this renderer at all except that glutin is used to create the window
@@ -142,6 +141,7 @@ fn main() {
                     ui,
                     ["Main Display", "Tile Map"],
                     [gb_display_manager, gb_debugger_manager],
+                    &mut gameboy,
                 );
                 render_gameboy_registers(ui, &mut gameboy);
                 render_gameboy_instruction_stepper(
@@ -241,7 +241,12 @@ fn imgui_init(display: &glium::Display) -> (imgui_winit_support::WinitPlatform, 
 }
 
 /*    IMGUI WINDOWS RENDERING    */
-fn render_display_window(ui: &mut Ui, labels: [&str; 2], stms: [ScreenTextureManager; 2]) {
+fn render_display_window(
+    ui: &mut Ui,
+    labels: [&str; 2],
+    stms: [ScreenTextureManager; 2],
+    gameboy: &mut GameBoy,
+) {
     ui.window("Displays")
         .position([5.0, 415.0], Condition::Always)
         .size(
@@ -261,6 +266,23 @@ fn render_display_window(ui: &mut Ui, labels: [&str; 2], stms: [ScreenTextureMan
                         stms[index].show(ui);
                         //stms[index].show_textures(ui);
                     });
+                }
+            }
+
+            for key in [
+                imgui::Key::F1,
+                imgui::Key::F2,
+                imgui::Key::Q,
+                imgui::Key::W,
+                imgui::Key::E,
+                imgui::Key::A,
+                imgui::Key::S,
+                imgui::Key::D,
+            ] {
+                if ui.is_key_pressed(key) {
+                    gameboy.press_key_raw(key);
+                } else if ui.is_key_released(key) {
+                    gameboy.unpress_key_raw(key);
                 }
             }
         });

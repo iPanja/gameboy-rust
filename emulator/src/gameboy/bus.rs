@@ -1,6 +1,6 @@
 use super::{
     cartridge::{MBC, MBC0},
-    interrupt, Interrupt, Memory, Timer, PPU,
+    interrupt, Interrupt, Joypad, Memory, Timer, PPU,
 };
 
 const BOOT_ROM_SIZE: u16 = 0x100;
@@ -11,6 +11,7 @@ pub struct Bus {
     pub timer: Timer,
     pub dbg: Vec<char>,
     pub mbc: Box<dyn MBC>,
+    pub joypad: Joypad,
     is_boot_rom_mapped: bool,
     boot_rom: [u8; BOOT_ROM_SIZE as usize],
 }
@@ -23,6 +24,7 @@ impl Bus {
             timer: Timer::new(),
             dbg: Vec::new(),
             mbc: Box::new(MBC0::new()),
+            joypad: Joypad::new(),
             is_boot_rom_mapped: false,
             boot_rom: [0; BOOT_ROM_SIZE as usize],
         }
@@ -53,7 +55,8 @@ impl Bus {
                 .ppu
                 .read_byte((address - 0xFF40) as usize, address as usize), // PPU - Internal Registers
             0xFF04..=0xFF07 => self.timer.read_byte((address - 0xFF04) as usize), // Timer and Divider Registers
-            0xFF00 => 0xFF, //self.ram.read_byte(0xFF), // Joypad Input
+            0xFF00 => self.joypad.read_byte(),                                    // Joypad Input
+            //0xFF00 => 0xFF, //self.ram.read_byte(0xFF), // Joypad Input
             _ => self.ram.read_byte(address),
         }
     }
@@ -65,6 +68,14 @@ impl Bus {
 
         match address {
             0x0000..=0x7FFF => self.mbc.write_byte(address, byte),
+            /*
+            0x0000..=0x7FFF => {
+                if self.is_boot_rom_mapped && address < BOOT_ROM_SIZE {
+                    self.boot_rom[address as usize] = byte;
+                } else {
+                    self.mbc.write_byte(address, byte);
+                }
+            }*/
             0xA000..=0xBFFF => self.mbc.write_byte(address, byte),
             0xFF50 => self.is_boot_rom_mapped = false,
 
@@ -87,7 +98,8 @@ impl Bus {
                     .write_byte((address - 0xFF40) as usize, address as usize, byte)
             }
             0xFF04..=0xFF07 => self.timer.write_byte((address - 0xFF04) as usize, byte), // Timer and Divider Registers
-            0xFF00 => self.ram.write_byte(0xFF, byte), // Joypad Input
+            0xFF00 => self.joypad.write_byte(byte), // Joypad Input
+            //0xFF00 => self.ram.write_byte(0xFF, byte), // Joypad Input
             _ => self.ram.write_byte(address, byte),
         }
     }
@@ -149,18 +161,6 @@ impl Bus {
             let c = char::from(c_byte);
             self.dbg.push(c);
             self.ram_write_byte(0xFF02, 0);
-
-            // Print
-            /*
-            let result: String = self.dbg.iter().collect();
-            println!("Serial Port: {}", result);
-
-            if result.contains("Failed") {
-                //panic!("Test failed!");
-            } else if result.contains("Passed") {
-                //std::process::exit(0);
-            }
-            */
         }
     }
 }

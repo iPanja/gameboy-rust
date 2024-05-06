@@ -1,6 +1,6 @@
 use crate::{DEBUGGER_SCREEN_HEIGHT, SCREEN_HEIGHT, SCREEN_WIDTH};
 
-use super::{ppu::Pixel, Bus, CartridgeHeader, CPU, PPU};
+use super::{joypad::JoypadInputKey, ppu::Pixel, Bus, CartridgeHeader, CPU, PPU};
 
 pub struct GameBoy {
     pub cpu: CPU,
@@ -64,6 +64,13 @@ impl GameBoy {
         self.bus.ram_load_rom(buffer, 0x0);
 
         self.cartridge_header = Some(CartridgeHeader::new(&buffer[0x0100..=0x014F]));
+        /* CAUSES NINTENDO LOGO TO DISAPPEAR??
+        if let Some(c_h) = &self.cartridge_header {
+            match c_h.cartridge_type_code {
+                //0x01 => self.bus.mbc = Box::new(super::cartridge::MBC1::new()),
+                _ => self.bus.mbc = Box::new(super::cartridge::MBC0::new()),
+            }
+        }*/
     }
 
     pub fn read_boot_rom(&mut self, buffer: &Vec<u8>) {
@@ -129,5 +136,16 @@ impl GameBoy {
                 buffer.push(color.b);
             }
         }
+    }
+
+    //
+    //  Joypad Input
+    //
+    pub fn press_key_raw(&mut self, raw_key: imgui::Key) {
+        self.bus.joypad.press_key_raw(raw_key);
+    }
+
+    pub fn unpress_key_raw(&mut self, raw_key: imgui::Key) {
+        self.bus.joypad.unpress_key_raw(raw_key);
     }
 }
