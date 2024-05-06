@@ -21,7 +21,7 @@ pub struct PPU {
     tile_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
     tile_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
     raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
-    oam: [Sprite; 40],   // [[u8; 4]; 40]
+    pub oam: [Sprite; 40], // [[u8; 4]; 40]
     // IO Registers 0xFF40-0xFF4B
     lcdc: u8,           // PPU control register - 0xFF40
     stat: u8,           // PPU status register - 0xFF41
@@ -36,7 +36,7 @@ pub struct PPU {
     wx: u8,             // Window X position - 0xFF4B
     // Internal data structures
     mode_cycles: u16,
-    scanline_sprite_cache: Vec<Sprite>,
+    pub scanline_sprite_cache: Vec<Sprite>,
     // Display
     screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3], // RGB
 }
@@ -447,7 +447,7 @@ impl PPU {
         }
     }
 
-    fn get_sprite_height(&self) -> u8 {
+    pub fn get_sprite_height(&self) -> u8 {
         match self.lcdc & 0b100 {
             0 => 8,
             _ => 16,
@@ -546,21 +546,37 @@ impl PPU {
         for sprite in self.scanline_sprite_cache.iter().rev() {
             // Sprite data
             let y_position = sprite[0] as usize;
-            let x_position = sprite[1] as usize - self.scx as usize;
+            let x_position = sprite[1] as usize;
             let tile_index = sprite[2] as usize;
             let attributes = sprite[3];
 
-            if sprite[1] - 8 < self.scx || x_position > 160 {
-                //println!("sprite off screen");
-                continue;
-            } else {
-                //println!("drawing sprite!");
-                let tile_data: Tile = self.copy_from_tile_set(tile_index);
-                let row_data: [Pixel; 8] = tile_data[(y_position % 8) as usize];
-                // Attempt to draw to row_buffer
-                for dx in 0..8 {
-                    row_buffer[x_position + dx] = Some(row_data[dx]);
+            // Might not be necessary to check this if the drawing is handled correctly
+            // Check horizontal alignment
+            if x_position == 0 || x_position >= 168 {
+                continue; // Completely off the screen horizontally
+            }
+            // Check vertical alignment
+            if y_position == 0 || y_position >= 160 {
+                continue; // Completely off the screen vertically
+            }
+
+            // Draw sprite tile
+            let tile_data: Tile = self.tile_set[tile_index]; // Always uses the $8000 method (unsigned => usize)
+            let row_index = self.ly + 16 - y_position as u8;
+            let row_data = tile_data[row_index as usize];
+
+            // Attempt to draw to row_buffer
+            for dx in 0..8 {
+                // Off the left side of the screen
+                if x_position + dx <= 8 {
+                    continue;
                 }
+                // Off the right side of the screen
+                if x_position + dx >= 160 {
+                    continue;
+                }
+
+                row_buffer[x_position - 8 + dx] = Some(row_data[dx]);
             }
         }
     }

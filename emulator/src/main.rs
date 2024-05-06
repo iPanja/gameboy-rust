@@ -135,8 +135,8 @@ fn main() {
 
             // CREATE UI
             {
-                //ui.show_demo_window(&mut true); - DEMO WINDOW
-                //render_gameboy_window(ui, gb_display_manager, [5.0, 450.0]);
+                ui.show_demo_window(&mut true); // - DEMO WINDOW
+                                                //render_gameboy_window(ui, gb_display_manager, [5.0, 450.0]);
                 render_display_window(
                     ui,
                     ["Main Display", "Tile Map"],
@@ -154,6 +154,7 @@ fn main() {
                     &mut tick_rate,
                     &mut is_playing,
                 );
+                ppu_debugger(ui, &mut gameboy);
             }
 
             // Setup for drawing
@@ -290,8 +291,8 @@ fn render_display_window(
 
 fn render_gameboy_registers(ui: &mut Ui, gameboy: &mut GameBoy) {
     ui.window("Registers")
-        .size([315.0, 400.0], Condition::Always)
-        .resizable(false)
+        .size([315.0, 400.0], Condition::Appearing)
+        .resizable(true)
         .position([5.0, 5.0], Condition::Always)
         .build(|| {
             let table_flags = imgui::TableFlags::ROW_BG
@@ -366,20 +367,6 @@ fn render_gameboy_registers(ui: &mut Ui, gameboy: &mut GameBoy) {
                 ui.text(format!(
                     "IE Reg - {:08b}",
                     gameboy.bus.ram_read_byte(0xFFFF)
-                ));
-                ui.separator();
-                ui.text(format!("LY Reg - {:#X}", gameboy.bus.ram_read_byte(0xFF44)));
-                ui.text(format!(
-                    "LYC Reg - {:#X}",
-                    gameboy.bus.ram_read_byte(0xFF45)
-                ));
-                ui.text(format!(
-                    "LCDC Reg - {:08b}",
-                    gameboy.bus.ram_read_byte(0xFF40)
-                ));
-                ui.text(format!(
-                    "STAT Reg - {:08b}",
-                    gameboy.bus.ram_read_byte(0xFF41)
                 ));
                 ui.separator();
 
@@ -622,5 +609,45 @@ fn render_gameboy_instruction_stepper(
                     }
                 };
             }
+        });
+}
+
+fn ppu_debugger(ui: &mut Ui, gameboy: &mut GameBoy) {
+    ui.window("PPU Info")
+        .size([300.0, 500.0], Condition::FirstUseEver)
+        .position([675.0, 5.0], Condition::Always)
+        .build(|| {
+            ui.text(format!("LY Reg - {:#X}", gameboy.bus.ram_read_byte(0xFF44)));
+            ui.text(format!(
+                "LYC Reg - {:#X}",
+                gameboy.bus.ram_read_byte(0xFF45)
+            ));
+            ui.text(format!(
+                "LCDC Reg - {:08b}",
+                gameboy.bus.ram_read_byte(0xFF40)
+            ));
+            ui.text(format!(
+                "STAT Reg - {:08b}",
+                gameboy.bus.ram_read_byte(0xFF41)
+            ));
+            ui.text(format!(
+                "sprite cache: {:?}",
+                gameboy.bus.ppu.scanline_sprite_cache
+            ));
+            ui.text(format!(
+                "sprite height: {:?}",
+                gameboy.bus.ppu.get_sprite_height()
+            ));
+            ui.separator();
+
+            ui.child_window("OAM")
+                .size([275.0, 400.0])
+                .horizontal_scrollbar(true)
+                .border(true)
+                .build(|| {
+                    for (i, sprite) in gameboy.bus.ppu.oam.iter().enumerate() {
+                        ui.text(format!("{:#X}\t\t{:?}", i, sprite));
+                    }
+                });
         });
 }

@@ -32,7 +32,7 @@ impl Timer {
 
     pub fn read_byte(&self, index: usize) -> u8 {
         match index {
-            0x00 => self.div,
+            0x00 => ((self.internal_div & 0xFF00) >> 8) as u8,
             0x01 => self.tima,
             0x02 => self.tma,
             0x03 => self.tac,
