@@ -68,14 +68,6 @@ impl Bus {
 
         match address {
             0x0000..=0x7FFF => self.mbc.write_byte(address, byte),
-            /*
-            0x0000..=0x7FFF => {
-                if self.is_boot_rom_mapped && address < BOOT_ROM_SIZE {
-                    self.boot_rom[address as usize] = byte;
-                } else {
-                    self.mbc.write_byte(address, byte);
-                }
-            }*/
             0xA000..=0xBFFF => self.mbc.write_byte(address, byte),
             0xFF50 => self.is_boot_rom_mapped = false,
 
@@ -92,7 +84,7 @@ impl Bus {
                 self.ppu
                     .write_byte((address - 0xFF40) as usize, address as usize, byte)
             }
-            0xFF46 => self.dma_transfer(address),
+            0xFF46 => self.dma_transfer(byte),
             0xFF47..=0xFF4B => {
                 self.ppu
                     .write_byte((address - 0xFF40) as usize, address as usize, byte)
@@ -104,8 +96,8 @@ impl Bus {
         }
     }
 
-    fn dma_transfer(&mut self, address: u16) {
-        let real_addr = address << 8;
+    fn dma_transfer(&mut self, address: u8) {
+        let real_addr = (address as u16) << 8;
         for index in 0..0xA0 {
             let value = self.ram_read_byte(real_addr + index);
             self.ram_write_byte(0xFE00 + index, value);

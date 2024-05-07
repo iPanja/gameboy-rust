@@ -20,8 +20,8 @@ pub struct PPU {
     pub tile_set: [Tile; 384],   // Tile Set Blocks 0-3 - 0x8000-0x97FF
     tile_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
     tile_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
-    raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
-    pub oam: [Sprite; 40], // [[u8; 4]; 40]
+    pub raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
+    pub oam: [Sprite; 40],   // [[u8; 4]; 40]
     // IO Registers 0xFF40-0xFF4B
     lcdc: u8,           // PPU control register - 0xFF40
     stat: u8,           // PPU status register - 0xFF41
@@ -646,7 +646,7 @@ impl PPU {
 
     fn build_sprite_cache(&mut self) {
         self.scanline_sprite_cache = Vec::with_capacity(10);
-        for sprite in self.oam {
+        for sprite in self.oam.iter() {
             let y_position = sprite[0];
             let x_position = sprite[1];
 
@@ -655,7 +655,7 @@ impl PPU {
                 && self.ly + 16 < y_position + self.get_sprite_height()
                 && self.scanline_sprite_cache.len() < 10
             {
-                self.scanline_sprite_cache.push(sprite);
+                self.scanline_sprite_cache.push(*sprite);
             }
         }
 
@@ -762,5 +762,20 @@ impl PPU {
         let color = Color::from(Pixel::from(bits as u8));
 
         (color.r, color.g, color.b)
+    }
+
+    pub fn tile_to_vec(tile: &Tile) -> Vec<u8> {
+        let mut vec: Vec<u8> = Vec::with_capacity(64 * 4);
+        for row in tile {
+            for pixel in row {
+                let color = Color::from(*pixel);
+
+                vec.push(color.r);
+                vec.push(color.g);
+                vec.push(color.b);
+            }
+        }
+
+        vec
     }
 }

@@ -80,6 +80,14 @@ fn main() {
         width: DEBUGGER_SCREEN_WIDTH as f32,
         height: DEBUGGER_SCREEN_HEIGHT as f32,
     };
+    let mut oam_stms: Vec<ScreenTextureManager> = Vec::with_capacity(40);
+    for _ in 0..40 {
+        oam_stms.push(ScreenTextureManager {
+            texture_id: None,
+            width: 8.0,
+            height: 8.0,
+        });
+    }
     // Debugger
     //  > Breakpoints
     let mut selected_breakpoint: i32 = 0;
@@ -154,7 +162,7 @@ fn main() {
                     &mut tick_rate,
                     &mut is_playing,
                 );
-                ppu_debugger(ui, &mut gameboy);
+                ppu_debugger(ui, &mut gameboy, &oam_stms);
             }
 
             // Setup for drawing
@@ -196,6 +204,18 @@ fn main() {
             ) {
                 Ok(_id) => {}
                 Err(_e) => println!("{:?}", _e),
+            }
+            // OAM Sprites
+            for (index, sprite) in gameboy.bus.ppu.oam.iter().enumerate() {
+                //for bytes in gameboy.bus.ppu.raw_oam.chunks(4) {
+                //let tile_index = bytes[2];
+                let tile_index = sprite[2];
+                let tile_data = gameboy.bus.ppu.tile_set[tile_index as usize];
+                oam_stms[index].insert_or_update(
+                    display.get_context(),
+                    renderer.textures(),
+                    gameboy::PPU::tile_to_vec(&tile_data),
+                );
             }
         }
         Event::WindowEvent {
@@ -612,7 +632,7 @@ fn render_gameboy_instruction_stepper(
         });
 }
 
-fn ppu_debugger(ui: &mut Ui, gameboy: &mut GameBoy) {
+fn ppu_debugger(ui: &mut Ui, gameboy: &mut GameBoy, oam_stms: &Vec<ScreenTextureManager>) {
     ui.window("PPU Info")
         .size([300.0, 500.0], Condition::FirstUseEver)
         .position([675.0, 5.0], Condition::Always)
@@ -646,8 +666,19 @@ fn ppu_debugger(ui: &mut Ui, gameboy: &mut GameBoy) {
                 .border(true)
                 .build(|| {
                     for (i, sprite) in gameboy.bus.ppu.oam.iter().enumerate() {
-                        ui.text(format!("{:#X}\t\t{:?}", i, sprite));
+                        oam_stms[i].show(ui);
+                        ui.same_line();
+                        ui.text(format!("{:#4X}\t\t{:?}", i, sprite));
                     }
                 });
+            /*
+            ui.child_window("OAM Sprites").border(true).build(|| {
+                for (i, stm) in oam_stms.iter().enumerate() {
+                    if i % 10 != 0 {
+                        ui.same_line_with_spacing(0.0, 5.0);
+                    }
+                    stm.show(ui);
+                }
+            })*/
         });
 }
