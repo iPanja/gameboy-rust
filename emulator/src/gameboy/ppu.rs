@@ -560,24 +560,59 @@ impl PPU {
                 continue; // Completely off the screen vertically
             }
 
-            // Draw sprite tile
-            let tile_data: Tile = self.tile_set[tile_index]; // Always uses the $8000 method (unsigned => usize)
-            let row_index = self.ly + 16 - y_position as u8;
-            let row_data = tile_data[row_index as usize];
-
             // Attempt to draw to row_buffer
-            for dx in 0..8 {
-                // Off the left side of the screen
-                if x_position + dx <= 8 {
-                    continue;
-                }
-                // Off the right side of the screen
-                if x_position + dx >= 160 {
-                    continue;
-                }
+            self.draw_scanline_sprite(row_buffer, sprite);
+        }
+    }
 
-                row_buffer[x_position - 8 + dx] = Some(row_data[dx]);
+    fn draw_scanline_sprite(
+        &self,
+        row_buffer: &mut [Option<Pixel>; SCREEN_WIDTH],
+        sprite: &Sprite,
+    ) {
+        // Sprite data
+        let y_position = sprite[0] as usize;
+        let x_position = sprite[1] as usize;
+        let tile_index = sprite[2] as usize;
+        let attributes = sprite[3];
+
+        // Draw sprite tile
+        let tile_data: Tile = self.tile_set[tile_index]; // Always uses the $8000 method (unsigned => usize)
+        let mut row_index = self.ly + 16 - y_position as u8;
+
+        // Handle attributes
+        // Y Flip
+        row_index = if attributes & 0b0100_0000 != 0 {
+            // Y Flip
+            7 - row_index
+        } else {
+            row_index
+        };
+
+        let mut row_data = tile_data[row_index as usize];
+        // X Flip
+        if attributes & 0b0010_0000 != 0 {
+            row_data.reverse();
+        }
+
+        // Palette
+        let palette = match attributes & 0b0001_0000 == 0 {
+            true => &self.ob_palette_1,
+            false => &self.ob_palette_2,
+        };
+
+        for dx in 0..8 {
+            // Off the left side of the screen
+            if x_position + dx <= 8 {
+                continue;
             }
+            // Off the right side of the screen
+            if x_position + dx >= 160 {
+                continue;
+            }
+
+            let pixel = self.decode_pixel(row_data[dx], *palette, true);
+            row_buffer[x_position - 8 + dx] = Some(pixel);
         }
     }
 
@@ -762,6 +797,24 @@ impl PPU {
         let color = Color::from(Pixel::from(bits as u8));
 
         (color.r, color.g, color.b)
+    }
+
+    fn decode_pixel(&self, pixel: Pixel, pallete: u8, transparent: bool) -> Pixel {
+        let bits = match pixel {
+            Pixel::Three => (pallete >> 6) & 0x3,
+            Pixel::Two => (pallete >> 4) & 0x3,
+            Pixel::One => (pallete >> 2) & 0x3,
+            Pixel::Zero => {
+                if transparent {
+                    0
+                } else {
+                    (pallete >> 0) & 0x3
+                }
+            }
+        };
+        let pixel = Pixel::from(bits as u8);
+
+        pixel
     }
 
     pub fn tile_to_vec(tile: &Tile) -> Vec<u8> {

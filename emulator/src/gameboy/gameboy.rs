@@ -54,6 +54,14 @@ impl GameBoy {
             }
         };
 
+        self.bus.joypad.raise_interrupt = match self.bus.joypad.raise_interrupt {
+            None => None,
+            Some(x) => {
+                self.bus.trigger_interrupt(x);
+                None
+            }
+        };
+
         _cycles as f64
     }
 
@@ -80,12 +88,6 @@ impl GameBoy {
     //
     // Public display methods
     //
-    pub fn enable_display(&mut self) {
-        panic!("deprec");
-        //self.bus.ram_write_byte(0xFF44, 0x90); //[0xFF44] = 0x90;
-        //self.bus.ram_write_byte(0xFF40, 0b1010000); //[0xFF40] = 0b1010000;
-        //self.bus.ram_write_byte(0xFF42, 0); //[0xFF42] = 0;
-    }
 
     pub fn export_display(&mut self, buffer: &mut Vec<u8>) {
         *buffer = self.bus.ppu.get_display().to_vec();
@@ -93,7 +95,6 @@ impl GameBoy {
 
     pub fn export_tile_map_display(&mut self, buffer: &mut Vec<u8>) {
         // Update internal frame buffer
-        //self.bus.ram_write_byte(0xFF44, 0x90);
         self.bus.ppu.get_debug_display(&mut self.tile_map_screen);
 
         // Export as vector

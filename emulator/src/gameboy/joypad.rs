@@ -1,3 +1,5 @@
+use super::Interrupt;
+
 pub enum JoypadInputKey {
     Start,
     Select,
@@ -47,6 +49,7 @@ enum JoypadSelectionMask {
 pub struct Joypad {
     input_byte: u8, // Start | Select | B | A | Down | Up | Left | Right
     selection_mask: JoypadSelectionMask,
+    pub raise_interrupt: Option<Interrupt>,
 }
 
 impl Joypad {
@@ -54,6 +57,7 @@ impl Joypad {
         Joypad {
             input_byte: 0xFF, // Start as all unpressed
             selection_mask: JoypadSelectionMask::Buttons,
+            raise_interrupt: None,
         }
     }
 
@@ -76,6 +80,16 @@ impl Joypad {
     pub fn press_key(&mut self, joypad_key: JoypadInputKey) {
         let bit = joypad_key.input_byte_pos();
         self.input_byte &= !bit; // Clearing bit - 0 = pressed
+
+        // If this bit is currently monitored, trigger an interrupt
+        let should_trigger = match self.selection_mask {
+            JoypadSelectionMask::Buttons => bit & 0xF0 != 0, // Upper 4
+            JoypadSelectionMask::Directions => bit & 0x0F != 0, // Lower 4
+        };
+
+        if should_trigger {
+            self.raise_interrupt = Some(Interrupt::Joypad);
+        }
     }
 
     pub fn press_key_raw(&mut self, key: imgui::Key) {
