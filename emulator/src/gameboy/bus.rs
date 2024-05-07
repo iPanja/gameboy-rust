@@ -14,6 +14,7 @@ pub struct Bus {
     pub joypad: Joypad,
     is_boot_rom_mapped: bool,
     boot_rom: [u8; BOOT_ROM_SIZE as usize],
+    dma_address_upper: u8,
 }
 
 impl Bus {
@@ -27,6 +28,7 @@ impl Bus {
             joypad: Joypad::new(),
             is_boot_rom_mapped: false,
             boot_rom: [0; BOOT_ROM_SIZE as usize],
+            dma_address_upper: 0,
         }
     }
 
@@ -51,7 +53,11 @@ impl Bus {
             0xFE00..=0xFE9F => self
                 .ppu
                 .read_byte((address - 0x5200) as usize, address as usize), // PPU - OAM
-            0xFF40..=0xFF4B => self
+            0xFF40..=0xFF45 => self
+                .ppu
+                .read_byte((address - 0xFF40) as usize, address as usize), // PPU - Internal Registers
+            0xFF46 => self.dma_address_upper,
+            0xFF47..=0xFF4B => self
                 .ppu
                 .read_byte((address - 0xFF40) as usize, address as usize), // PPU - Internal Registers
             0xFF04..=0xFF07 => self.timer.read_byte((address - 0xFF04) as usize), // Timer and Divider Registers
@@ -97,6 +103,8 @@ impl Bus {
     }
 
     fn dma_transfer(&mut self, address: u8) {
+        self.dma_address_upper = address;
+
         let real_addr = (address as u16) << 8;
         for index in 0..0xA0 {
             let value = self.ram_read_byte(real_addr + index);

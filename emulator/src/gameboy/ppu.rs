@@ -633,6 +633,7 @@ impl PPU {
                 let window_col: u8 = (tile as u8) * 8 - window_x;
                 let tile_index = (window_row * 32 + window_col); // % (32 * 32);
 
+                //let tile_data: Tile = self.copy_from_tile_set(tile_index as usize);
                 let tile_data: Tile = self.copy_from_tile_set(tile_index as usize);
                 let row_data: [Pixel; 8] = tile_data[((self.ly - window_y) % 8) as usize];
 
