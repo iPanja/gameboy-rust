@@ -69,16 +69,17 @@ impl GameBoy {
     // Reading in ROMs
     //
     pub fn read_rom(&mut self, buffer: &Vec<u8>) {
-        self.bus.ram_load_rom(buffer, 0x0);
-
         self.cartridge_header = Some(CartridgeHeader::new(&buffer[0x0100..=0x014F]));
-        /* CAUSES NINTENDO LOGO TO DISAPPEAR??
+        // CAUSES NINTENDO LOGO TO DISAPPEAR??
+
         if let Some(c_h) = &self.cartridge_header {
             match c_h.cartridge_type_code {
-                //0x01 => self.bus.mbc = Box::new(super::cartridge::MBC1::new()),
+                0x01 => self.bus.mbc = Box::new(super::cartridge::MBC1::new(c_h)),
                 _ => self.bus.mbc = Box::new(super::cartridge::MBC0::new()),
             }
-        }*/
+        }
+
+        self.bus.ram_load_rom(buffer, 0x0);
     }
 
     pub fn read_boot_rom(&mut self, buffer: &Vec<u8>) {

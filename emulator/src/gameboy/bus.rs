@@ -15,6 +15,11 @@ pub struct Bus {
     is_boot_rom_mapped: bool,
     boot_rom: [u8; BOOT_ROM_SIZE as usize],
     dma_address_upper: u8,
+    wram: [u8; 0x8000],
+    hram: [u8; 0x7F],
+    serial: [u8; 2],
+    interrupt_flags: u8,
+    interrupts_enabled: u8,
 }
 
 impl Bus {
@@ -29,14 +34,15 @@ impl Bus {
             is_boot_rom_mapped: false,
             boot_rom: [0; BOOT_ROM_SIZE as usize],
             dma_address_upper: 0,
+            wram: [0; 0x8000],
+            hram: [0; 0x7F],
+            serial: [0; 2],
+            interrupt_flags: 0,
+            interrupts_enabled: 0,
         }
     }
 
     pub fn ram_read_byte(&self, address: u16) -> u8 {
-        if 0xE000 <= address && address <= 0xFDFF {
-            //println!("reading echo ram");
-        }
-
         match address {
             0x0000..=0x7FFF => {
                 if self.is_boot_rom_mapped && address < BOOT_ROM_SIZE {
@@ -45,25 +51,39 @@ impl Bus {
                     self.mbc.read_byte(address)
                 }
             }
-            0xA000..=0xBFFF => self.mbc.read_byte(address),
-
             0x8000..=0x9FFF => self // 0x97FF
                 .ppu
                 .read_byte((address - 0x8000) as usize, address as usize), // PPU - Tile RAM & Background Map (Division at 0x9800)
+            0xA000..=0xBFFF => self.mbc.read_byte(address),
+            0xC000..=0xDFFF => self.wram[(address - 0xC000) as usize], // Work RAM
+            0xE000..=0xFDFF => self.wram[(address - 0xE000) as usize], // Echo RAM
             0xFE00..=0xFE9F => self
                 .ppu
                 .read_byte((address - 0x5200) as usize, address as usize), // PPU - OAM
-            0xFF40..=0xFF45 => self
-                .ppu
-                .read_byte((address - 0xFF40) as usize, address as usize), // PPU - Internal Registers
-            0xFF46 => self.dma_address_upper,
-            0xFF47..=0xFF4B => self
-                .ppu
-                .read_byte((address - 0xFF40) as usize, address as usize), // PPU - Internal Registers
-            0xFF04..=0xFF07 => self.timer.read_byte((address - 0xFF04) as usize), // Timer and Divider Registers
-            0xFF00 => self.joypad.read_byte(),                                    // Joypad Input
-            //0xFF00 => 0xFF, //self.ram.read_byte(0xFF), // Joypad Input
-            _ => self.ram.read_byte(address),
+            0xFEA0..=0xFEFF => 0x00,                                   // TODO: Not Usable
+            0xFF00..=0xFF7F => {
+                // IO Registers
+                match address {
+                    0xFF00 => self.joypad.read_byte(), // Joypad Input
+                    0xFF01..=0xFF02 => self.serial[(address & 0x1) as usize], // SERIAL
+                    0xFF04..=0xFF07 => self.timer.read_byte((address - 0xFF04) as usize), // Timer
+                    0xFF0F => self.interrupt_flags,
+                    0xFF10..=0xFF3F => 0x0, // TODO: Audio & Audio Wave
+                    0xFF40..=0xFF45 => self
+                        .ppu
+                        .read_byte((address - 0xFF40) as usize, address as usize), // PPU
+                    0xFF46 => self.dma_address_upper,
+                    0xFF47..=0xFF4B => self
+                        .ppu
+                        .read_byte((address - 0xFF40) as usize, address as usize), // PPU
+                    0xFF4F => 0xFF, // TODO: VRAM Bank Select - CBG Only, Need Not Implement?
+                    0xFF50 => self.is_boot_rom_mapped as u8,
+                    _ => self.ram.read_byte(address), // 0x0
+                }
+            }
+            0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize],
+            0xFFFF => self.interrupts_enabled, // TODO: Access CPU for value?
+            _ => self.ram.read_byte(address),  // 0x0
         }
     }
 
@@ -74,31 +94,45 @@ impl Bus {
 
         match address {
             0x0000..=0x7FFF => self.mbc.write_byte(address, byte),
-            0xA000..=0xBFFF => self.mbc.write_byte(address, byte),
-            0xFF50 => self.is_boot_rom_mapped = false,
 
             0x8000..=0x9FFF => {
                 // 0x97FF
                 self.ppu
                     .write_byte((address - 0x8000) as usize, address as usize, byte)
             } // PPU - Tile RAM & Background Map (Division at 0x9800)
+            0xA000..=0xBFFF => self.mbc.write_byte(address, byte),
+            0xC000..=0xDFFF => self.wram[(address - 0xC000) as usize] = byte, // Work RAM
+            0xE000..=0xFDFF => self.wram[(address - 0xE000) as usize] = byte, // Echo RAM
             0xFE00..=0xFE9F => {
                 self.ppu
                     .write_byte((address - 0x5200) as usize, address as usize, byte)
             } // PPU - OAM
-            0xFF40..=0xFF45 => {
-                self.ppu
-                    .write_byte((address - 0xFF40) as usize, address as usize, byte)
+            0xFEA0..=0xFEFF => (),                                            // TODO: Not Usable
+            0xFF00..=0xFF7F => {
+                // IO Registers
+                match address {
+                    0xFF00 => self.joypad.write_byte(byte), // Joypad Input
+                    0xFF01..=0xFF02 => self.serial[(address & 0x1) as usize] = byte, // SERIAL
+                    0xFF04..=0xFF07 => self.timer.write_byte((address - 0xFF04) as usize, byte), // Timer and Divider Registers
+                    0xFF0F => self.interrupt_flags = byte,
+                    0xFF10..=0xFF3F => (), // TODO: Audio
+                    0xFF40..=0xFF45 => {
+                        self.ppu
+                            .write_byte((address - 0xFF40) as usize, address as usize, byte)
+                    }
+                    0xFF46 => self.dma_transfer(byte),
+                    0xFF47..=0xFF4B => {
+                        self.ppu
+                            .write_byte((address - 0xFF40) as usize, address as usize, byte)
+                    }
+                    0xFF4F => (), // TODO: VRAM Bank Select - CBG Only, Need Not Implement?
+                    0xFF50 => self.is_boot_rom_mapped = false,
+                    _ => self.ram.write_byte(address, byte), // ()
+                }
             }
-            0xFF46 => self.dma_transfer(byte),
-            0xFF47..=0xFF4B => {
-                self.ppu
-                    .write_byte((address - 0xFF40) as usize, address as usize, byte)
-            }
-            0xFF04..=0xFF07 => self.timer.write_byte((address - 0xFF04) as usize, byte), // Timer and Divider Registers
-            0xFF00 => self.joypad.write_byte(byte), // Joypad Input
-            //0xFF00 => self.ram.write_byte(0xFF, byte), // Joypad Input
-            _ => self.ram.write_byte(address, byte),
+            0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize] = byte,
+            0xFFFF => self.interrupts_enabled = byte,
+            _ => self.ram.write_byte(address, byte), // ()
         }
     }
 
@@ -123,11 +157,6 @@ impl Bus {
 
     pub fn ram_load_rom(&mut self, buffer: &Vec<u8>, addr: usize) {
         self.mbc.load_rom(buffer);
-        /*
-        for i in 0..buffer.len() {
-            //self.ram_write_byte((Memory::START_ADDR + i + addr) as u16, buffer[i]);
-            self.mbc.write_byte((addr + i) as u16, buffer[i]);
-        }*/
     }
 
     pub fn ram_load_boot_rom(&mut self, buffer: &Vec<u8>) {

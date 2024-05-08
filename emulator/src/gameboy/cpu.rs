@@ -68,8 +68,8 @@ impl CPU {
             if !self.interrupts_enabled {
                 // BUG
                 //println!("\thalt bug!");
-                return 1;
-                self.registers.pc -= 1;
+                return 4;
+                //self.registers.pc -= 1;
             }
         }
 
@@ -608,7 +608,7 @@ impl CPU {
             }
             // POP nn
             0xF1 => {
-                let word = self.stack_pop(bus);
+                let word = self.stack_pop(bus) & 0xFFF0;
                 self.registers.set_af(word);
                 12
             }
@@ -1099,7 +1099,7 @@ impl CPU {
             0x00 => 4,
             // HALT
             0x76 => {
-                //println!("\tHALT INSTR! {:#X}", self.registers.pc - 1);
+                println!("\tHALT INSTR! {:#X}", self.registers.pc - 1);
                 self.is_halted = true;
                 4
             }
@@ -1339,6 +1339,13 @@ impl CPU {
                 self.interrupt_action = Some(true);
                 4 // TODO
             }
+            // STOP
+            0x10 => {
+                let _useless_byte = self.read_byte(bus);
+                //println!("STOPPING");
+                //self.is_halted = true;
+                4
+            }
             // NOT FOUND!
             _ => {
                 panic!(
@@ -1348,19 +1355,6 @@ impl CPU {
                 );
             }
         };
-        //println!("Cycles: {}", cycles);
-        if self.registers.pc >= 0xE6 {
-            //println!("Waiting for LCD implementation!");
-            //println!("PC: {:#X}", self.registers.pc);
-            //println!("{:?}", self.registers);
-            //println!("$FF40 - LCDC : {:b}", bus.ram_read_byte(0xFF40));
-            //println!("$FF44 - LY : {:#X}", bus.ram_read_byte(0xFF44));
-            //panic!("a");
-        }
-
-        if self.registers.pc > 0x100 {
-            // println!("BOOT-ROM has exited!");
-        }
 
         cycles
     }
