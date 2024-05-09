@@ -2,11 +2,12 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::io::{Cursor, Read};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 use std::{env, thread, time};
 
 use gameboy::ui::rendering::ScreenTextureManager;
 use glium::backend::Facade;
-use glium::glutin::event::{Event, WindowEvent};
+use glium::glutin::event::{Event, KeyboardInput, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop};
 use glium::texture::{ClientFormat, RawImage2d};
 use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerBehavior};
@@ -43,8 +44,8 @@ fn main() {
 
     let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/cpu_instrs.gb").expect("INVALID ROM");
-    let mut rom = std::fs::File::open("../roms/individual/02-interrupts.gb").expect("INVALID ROM");
-    //let mut rom = std::fs::File::open("../roms/Dr. Mario.gb").expect("INVALID ROM");
+    //let mut rom = std::fs::File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
+    let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
@@ -106,125 +107,156 @@ fn main() {
     // > Sleep rate
     let should_sleep: bool = false;
     //let sleep_time = time::Duration::from_millis(1);
-    let sleep_time = time::Duration::from_nanos(100);
+    let clock_freq = gameboy.bus.timer.get_clock_freq();
+    let frame_time = Duration::new(0, (0.0025f64 / clock_freq) as u32);
+    //let frame_time = Duration::new(0, 16600000);
+    let mut last_frame_time = Instant::now();
 
     // Standard winit event loop
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::NewEvents(_) => {
-            let now = std::time::Instant::now();
-            imgui_context.io_mut().update_delta_time(now - last_frame);
-            last_frame = now;
-        }
-        Event::MainEventsCleared => {
-            // Tick emulator
-            {
-                if is_playing {
-                    for _ in 0..tick_rate {
-                        is_playing = !gameboy.tick_bp(Some(&breakpoints));
-                        if !is_playing {
-                            break;
+    event_loop.run(move |event, _, control_flow| {
+        match event {
+            Event::NewEvents(_) => {
+                let now = std::time::Instant::now();
+                imgui_context.io_mut().update_delta_time(now - last_frame);
+                last_frame = now;
+            }
+            Event::MainEventsCleared => {
+                // Tick emulator
+                {
+                    let mut cycles = 0f64;
+                    let mut press = false;
+                    if is_playing {
+                        while cycles < gameboy.bus.timer.get_clock_freq() * 5.0 {
+                            cycles += gameboy.step();
+                            if breakpoints.contains(&gameboy.cpu.registers.pc) {
+                                is_playing = false;
+                                break;
+                            }
+
+                            if press {
+                                //gameboy.press_key_raw(Some(glium::glutin::event::VirtualKeyCode::S))
+                            } else {
+                                //gameboy.unpress_key_raw(Some(glium::glutin::event::VirtualKeyCode::S))
+                            }
+                            press = !press;
                         }
                     }
                 }
-                if should_sleep & is_playing {
-                    thread::sleep(sleep_time);
+
+                //
+                let gl_window = display.gl_window();
+                winit_platform
+                    .prepare_frame(imgui_context.io_mut(), gl_window.window())
+                    .expect("Failed to prepare frame");
+                gl_window.window().request_redraw();
+            }
+            Event::RedrawRequested(_) => {
+                // Create frame for the all important `&imgui::Ui`
+                let ui = imgui_context.frame();
+
+                // CREATE UI
+                {
+                    //ui.show_demo_window(&mut true); // - DEMO WINDOW
+                    //render_gameboy_window(ui, gb_display_manager, [5.0, 450.0]);
+                    render_display_window(
+                        ui,
+                        ["Main Display", "Tile Map"],
+                        [gb_display_manager, gb_debugger_manager],
+                        &mut gameboy,
+                    );
+                    render_gameboy_registers(ui, &mut gameboy);
+                    render_gameboy_instruction_stepper(
+                        ui,
+                        &mut gameboy,
+                        &mut breakpoints,
+                        &mut breakpoint_labels,
+                        &mut breakpoint_input,
+                        &mut selected_breakpoint,
+                        &mut tick_rate,
+                        &mut is_playing,
+                    );
+                    ppu_debugger(ui, &mut gameboy, &oam_stms);
+
+                    // Screen renders
+                    // Main display
+                    let mut gb_display_buffer: Vec<u8> =
+                        Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT * 3);
+                    gameboy.export_display(&mut gb_display_buffer);
+                    match gb_display_manager.insert_or_update(
+                        display.get_context(),
+                        &mut renderer.textures(),
+                        gb_display_buffer,
+                    ) {
+                        Ok(_id) => {}
+                        Err(_e) => println!("{:?}", _e),
+                    }
+                    // Update Non-Essential Textures
+                    // Tile map
+                    let mut gb_debugger_buffer =
+                        Vec::with_capacity(DEBUGGER_SCREEN_WIDTH * DEBUGGER_SCREEN_HEIGHT);
+                    gameboy.export_tile_map_display(&mut gb_debugger_buffer);
+                    match gb_debugger_manager.insert_or_update(
+                        display.get_context(),
+                        &mut renderer.textures(),
+                        gb_debugger_buffer,
+                    ) {
+                        Ok(_id) => {}
+                        Err(_e) => println!("{:?}", _e),
+                    }
+                    // OAM Sprites
+                    for (index, sprite) in gameboy.bus.ppu.oam.iter().enumerate() {
+                        //for bytes in gameboy.bus.ppu.raw_oam.chunks(4) {
+                        //let tile_index = bytes[2];
+                        let tile_index = sprite[2];
+                        let tile_data = gameboy.bus.ppu.tile_set[tile_index as usize];
+                        let _ = oam_stms[index].insert_or_update(
+                            display.get_context(),
+                            renderer.textures(),
+                            gameboy::PPU::tile_to_vec(&tile_data),
+                        );
+                    }
                 }
+
+                // Setup for drawing
+                let gl_window = display.gl_window();
+                let mut target = display.draw();
+
+                // Renderer doesn't automatically clear window
+                target.clear_color_srgb(1.0, 1.0, 1.0, 1.0);
+
+                // Perform rendering
+                winit_platform.prepare_render(ui, gl_window.window());
+                let draw_data = imgui_context.render();
+                renderer
+                    .render(&mut target, draw_data)
+                    .expect("Rendering failed");
+                target.finish().expect("Failed to swap buffers");
             }
-
-            let gl_window = display.gl_window();
-            winit_platform
-                .prepare_frame(imgui_context.io_mut(), gl_window.window())
-                .expect("Failed to prepare frame");
-            gl_window.window().request_redraw();
-        }
-        Event::RedrawRequested(_) => {
-            // Create frame for the all important `&imgui::Ui`
-            let ui = imgui_context.frame();
-
-            // CREATE UI
-            {
-                ui.show_demo_window(&mut true); // - DEMO WINDOW
-                                                //render_gameboy_window(ui, gb_display_manager, [5.0, 450.0]);
-                render_display_window(
-                    ui,
-                    ["Main Display", "Tile Map"],
-                    [gb_display_manager, gb_debugger_manager],
-                    &mut gameboy,
-                );
-                render_gameboy_registers(ui, &mut gameboy);
-                render_gameboy_instruction_stepper(
-                    ui,
-                    &mut gameboy,
-                    &mut breakpoints,
-                    &mut breakpoint_labels,
-                    &mut breakpoint_input,
-                    &mut selected_breakpoint,
-                    &mut tick_rate,
-                    &mut is_playing,
-                );
-                ppu_debugger(ui, &mut gameboy, &oam_stms);
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => *control_flow = ControlFlow::Exit,
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        device_id: _,
+                        input: keyboard_input,
+                        is_synthetic: _,
+                    },
+                ..
+            } => match keyboard_input.state {
+                // TODO - Input Mapping
+                glium::glutin::event::ElementState::Pressed => {
+                    gameboy.press_key_raw(keyboard_input.virtual_keycode)
+                }
+                glium::glutin::event::ElementState::Released => {
+                    gameboy.unpress_key_raw(keyboard_input.virtual_keycode)
+                }
+            },
+            event => {
+                let gl_window = display.gl_window();
+                winit_platform.handle_event(imgui_context.io_mut(), gl_window.window(), &event);
             }
-
-            // Setup for drawing
-            let gl_window = display.gl_window();
-            let mut target = display.draw();
-
-            // Renderer doesn't automatically clear window
-            target.clear_color_srgb(1.0, 1.0, 1.0, 1.0);
-
-            // Perform rendering
-            winit_platform.prepare_render(ui, gl_window.window());
-            let draw_data = imgui_context.render();
-            renderer
-                .render(&mut target, draw_data)
-                .expect("Rendering failed");
-            target.finish().expect("Failed to swap buffers");
-
-            // Screen renders
-            // Main display
-            let mut gb_display_buffer: Vec<u8> =
-                Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT * 3);
-            gameboy.export_display(&mut gb_display_buffer);
-            match gb_display_manager.insert_or_update(
-                display.get_context(),
-                &mut renderer.textures(),
-                gb_display_buffer,
-            ) {
-                Ok(_id) => {}
-                Err(_e) => println!("{:?}", _e),
-            }
-            // Tile map
-            let mut gb_debugger_buffer =
-                Vec::with_capacity(DEBUGGER_SCREEN_WIDTH * DEBUGGER_SCREEN_HEIGHT);
-            gameboy.export_tile_map_display(&mut gb_debugger_buffer);
-            match gb_debugger_manager.insert_or_update(
-                display.get_context(),
-                &mut renderer.textures(),
-                gb_debugger_buffer,
-            ) {
-                Ok(_id) => {}
-                Err(_e) => println!("{:?}", _e),
-            }
-            // OAM Sprites
-            for (index, sprite) in gameboy.bus.ppu.oam.iter().enumerate() {
-                //for bytes in gameboy.bus.ppu.raw_oam.chunks(4) {
-                //let tile_index = bytes[2];
-                let tile_index = sprite[2];
-                let tile_data = gameboy.bus.ppu.tile_set[tile_index as usize];
-                oam_stms[index].insert_or_update(
-                    display.get_context(),
-                    renderer.textures(),
-                    gameboy::PPU::tile_to_vec(&tile_data),
-                );
-            }
-        }
-        Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } => *control_flow = ControlFlow::Exit,
-        event => {
-            let gl_window = display.gl_window();
-            winit_platform.handle_event(imgui_context.io_mut(), gl_window.window(), &event);
         }
     });
 }
@@ -261,6 +293,9 @@ fn imgui_init(display: &glium::Display) -> (imgui_winit_support::WinitPlatform, 
     (winit_platform, imgui_context)
 }
 
+/* INPUT HANDLING */
+fn handle_input(gameboy: &mut GameBoy) {}
+
 /*    IMGUI WINDOWS RENDERING    */
 fn render_display_window(
     ui: &mut Ui,
@@ -287,23 +322,6 @@ fn render_display_window(
                         stms[index].show(ui);
                         //stms[index].show_textures(ui);
                     });
-                }
-            }
-
-            for key in [
-                imgui::Key::F1,
-                imgui::Key::F2,
-                imgui::Key::Q,
-                imgui::Key::W,
-                imgui::Key::E,
-                imgui::Key::A,
-                imgui::Key::S,
-                imgui::Key::D,
-            ] {
-                if ui.is_key_pressed(key) {
-                    gameboy.press_key_raw(key);
-                } else if ui.is_key_released(key) {
-                    gameboy.unpress_key_raw(key);
                 }
             }
         });
@@ -434,6 +452,23 @@ fn render_gameboy_registers(ui: &mut Ui, gameboy: &mut GameBoy) {
             {
                 let serial_output: String = gameboy.bus.dbg.iter().collect();
                 ui.text(serial_output);
+            }
+
+            // Joypad
+            ui.separator();
+            if CollapsingHeader::new("Joypad Input")
+                .default_open(true)
+                .build(ui)
+            {
+                ui.text(format!("input byte: {:08b}", gameboy.bus.joypad.input_byte));
+                ui.text(format!(
+                    "selection mask: {:?}",
+                    gameboy.bus.joypad.selection_mask
+                ));
+                ui.text(format!(
+                    "interrupt pending: {:?}",
+                    gameboy.bus.joypad.raise_interrupt
+                ));
             }
         });
 }
@@ -629,6 +664,13 @@ fn render_gameboy_instruction_stepper(
                     }
                 };
             }
+
+            if ui.is_key_pressed_no_repeat(imgui::Key::MouseRight) {
+                if (*selected_breakpoint as usize) < breakpoints.len() {
+                    breakpoints.remove(*selected_breakpoint as usize);
+                    breakpoint_labels.remove(*selected_breakpoint as usize);
+                }
+            }
         });
 }
 
@@ -671,14 +713,5 @@ fn ppu_debugger(ui: &mut Ui, gameboy: &mut GameBoy, oam_stms: &Vec<ScreenTexture
                         ui.text(format!("{:#4X}\t\t{:?}", i, sprite));
                     }
                 });
-            /*
-            ui.child_window("OAM Sprites").border(true).build(|| {
-                for (i, stm) in oam_stms.iter().enumerate() {
-                    if i % 10 != 0 {
-                        ui.same_line_with_spacing(0.0, 5.0);
-                    }
-                    stm.show(ui);
-                }
-            })*/
         });
 }

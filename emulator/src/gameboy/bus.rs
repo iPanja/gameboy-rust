@@ -36,7 +36,7 @@ impl Bus {
             dma_address_upper: 0,
             wram: [0; 0x8000],
             hram: [0; 0x7F],
-            serial: [0; 2],
+            serial: [0xFF, 0], //[0; 2],
             interrupt_flags: 0,
             interrupts_enabled: 0,
         }
@@ -176,9 +176,9 @@ impl Bus {
     pub fn tick(&mut self, cycles: u8) {
         self.timer.tick(cycles);
 
-        let interrupts = self.ppu.tick(cycles as u16);
+        let ppu_interrupts = self.ppu.tick(cycles as u16);
 
-        for interrupt in interrupts {
+        for interrupt in ppu_interrupts {
             self.trigger_interrupt(interrupt);
         }
     }

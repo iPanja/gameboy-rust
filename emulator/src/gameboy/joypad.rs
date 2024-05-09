@@ -41,14 +41,10 @@ impl JoypadInputKey {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
-enum JoypadSelectionMask {
-    Buttons,
-    Directions,
-}
 
 pub struct Joypad {
-    input_byte: u8, // Start | Select | B | A | Down | Up | Left | Right
-    selection_mask: JoypadSelectionMask,
+    pub input_byte: u8,     // Start | Select | B | A | Down | Up | Left | Right
+    pub selection_mask: u8, // 2 bits
     pub raise_interrupt: Option<Interrupt>,
 }
 
@@ -56,35 +52,60 @@ impl Joypad {
     pub fn new() -> Self {
         Joypad {
             input_byte: 0xFF, // Start as all unpressed
-            selection_mask: JoypadSelectionMask::Buttons,
+            selection_mask: 0,
             raise_interrupt: None,
         }
     }
 
     pub fn read_byte(&self) -> u8 {
         // Reading 0xFF00
-        match self.selection_mask {
-            JoypadSelectionMask::Buttons => self.input_byte >> 4,
-            JoypadSelectionMask::Directions => self.input_byte & 0x0F,
+        let mut result: u8 = 0xF0;
+
+        if self.selection_mask == 0b10 {
+            // Read Directions; lower nibble
+            self.input_byte & 0xF | 0xF0;
+            result |= self.input_byte & 0x0F;
         }
+        if self.selection_mask == 0b01 {
+            // Read Buttons; upper nible
+            result |= (self.input_byte & 0xF0) >> 4;
+        }
+        if self.selection_mask == 0b11 {
+            // ...
+            result |= 0xF;
+        }
+
+        result
     }
 
     pub fn write_byte(&mut self, byte: u8) {
-        match byte & 0b0011_0000 >> 4 {
-            0b10 => self.selection_mask = JoypadSelectionMask::Buttons,
-            0b01 => self.selection_mask = JoypadSelectionMask::Directions,
-            _ => (),
-        }
+        // Update reading mode
+        self.selection_mask = (byte & 0x30) >> 4;
+
+        /*println!(
+            "joypad mode: {:?}\t({:08b})",
+            self.selection_mask,
+            byte & 0b0011_0000 >> 4
+        );*/
     }
 
     pub fn press_key(&mut self, joypad_key: JoypadInputKey) {
         let bit = joypad_key.input_byte_pos();
-        self.input_byte &= !bit; // Clearing bit - 0 = pressed
+
+        let prev_value = self.input_byte & bit;
+        self.input_byte &= !bit; // Clearing bit; 0 = pressed
 
         // If this bit is currently monitored, trigger an interrupt
-        let should_trigger = match self.selection_mask {
-            JoypadSelectionMask::Buttons => bit & 0xF0 != 0, // Upper 4
-            JoypadSelectionMask::Directions => bit & 0x0F != 0, // Lower 4
+        let should_trigger = {
+            if self.selection_mask == 0b10 {
+                // Directions
+                prev_value == 1 && bit < 0x10
+            } else if self.selection_mask == 0b01 {
+                // Buttons
+                prev_value == 1 && bit > 0xF
+            } else {
+                false
+            }
         };
 
         if should_trigger {
@@ -100,7 +121,7 @@ impl Joypad {
 
     pub fn unpress_key(&mut self, joypad_key: JoypadInputKey) {
         let bit = joypad_key.input_byte_pos();
-        self.input_byte |= bit; // Setting bit - 1 = unpressed
+        self.input_byte |= bit; // Setting bit; 1 = unpressed
     }
 
     pub fn unpress_key_raw(&mut self, key: imgui::Key) {

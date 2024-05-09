@@ -102,6 +102,7 @@ impl CPU {
                                                  //println!("{:#X}\n", ier);
 
                 // Handled in order of priority
+                // TODO - refactor into for loop
                 if triggers & 0x1 == 0x1 {
                     // V Blank
                     self.call(bus, 0x40);

@@ -1,3 +1,5 @@
+use glium::glutin::event::VirtualKeyCode;
+
 use crate::{DEBUGGER_SCREEN_HEIGHT, SCREEN_HEIGHT, SCREEN_WIDTH};
 
 use super::{joypad::JoypadInputKey, ppu::Pixel, Bus, CartridgeHeader, CPU, PPU};
@@ -44,7 +46,6 @@ impl GameBoy {
     pub fn step(&mut self) -> f64 {
         let _cycles = self.cpu.tick(&mut self.bus);
         self.bus.tick(_cycles);
-        // TODO: TICK PPU
 
         self.bus.timer.raise_interrupt = match self.bus.timer.raise_interrupt {
             None => None,
@@ -143,11 +144,45 @@ impl GameBoy {
     //
     //  Joypad Input
     //
-    pub fn press_key_raw(&mut self, raw_key: imgui::Key) {
+    pub fn press_key_raw_imgui(&mut self, raw_key: imgui::Key) {
         self.bus.joypad.press_key_raw(raw_key);
     }
 
-    pub fn unpress_key_raw(&mut self, raw_key: imgui::Key) {
+    pub fn unpress_key_raw_imgui(&mut self, raw_key: imgui::Key) {
         self.bus.joypad.unpress_key_raw(raw_key);
+    }
+
+    fn parse_key(&self, raw_key: Option<VirtualKeyCode>) -> Option<JoypadInputKey> {
+        if let Some(raw_key) = raw_key {
+            match raw_key {
+                VirtualKeyCode::F2 => Some(JoypadInputKey::Start),
+                VirtualKeyCode::F1 => Some(JoypadInputKey::Select),
+                VirtualKeyCode::E => Some(JoypadInputKey::A),
+                VirtualKeyCode::Q => Some(JoypadInputKey::B),
+                VirtualKeyCode::W => Some(JoypadInputKey::Up),
+                VirtualKeyCode::A => Some(JoypadInputKey::Left),
+                VirtualKeyCode::S => Some(JoypadInputKey::Down),
+                VirtualKeyCode::D => Some(JoypadInputKey::Right),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn press_key_raw(&mut self, raw_key: Option<VirtualKeyCode>) {
+        let joypad_key: Option<JoypadInputKey> = self.parse_key(raw_key);
+
+        if let Some(key) = joypad_key {
+            self.bus.joypad.press_key(key);
+        }
+    }
+
+    pub fn unpress_key_raw(&mut self, raw_key: Option<VirtualKeyCode>) {
+        let joypad_key: Option<JoypadInputKey> = self.parse_key(raw_key);
+
+        if let Some(key) = joypad_key {
+            self.bus.joypad.unpress_key(key);
+        }
     }
 }
