@@ -105,12 +105,7 @@ fn main() {
     let mut tick_rate: i16 = 5;
 
     // > Sleep rate
-    let should_sleep: bool = false;
-    //let sleep_time = time::Duration::from_millis(1);
     let clock_freq = gameboy.bus.timer.get_clock_freq();
-    let frame_time = Duration::new(0, (0.0025f64 / clock_freq) as u32);
-    //let frame_time = Duration::new(0, 16600000);
-    let mut last_frame_time = Instant::now();
 
     // Standard winit event loop
     event_loop.run(move |event, _, control_flow| {
@@ -124,24 +119,16 @@ fn main() {
                 // Tick emulator
                 {
                     let mut cycles = 0f64;
-                    let mut press = false;
                     if is_playing {
-                        while cycles < gameboy.bus.timer.get_clock_freq() * 5.0 {
+                        while cycles < gameboy.bus.timer.get_clock_freq() * 2f64 {
                             cycles += gameboy.step();
                             if breakpoints.contains(&gameboy.cpu.registers.pc) {
                                 is_playing = false;
                                 break;
                             }
-
-                            if press {
-                                //gameboy.press_key_raw(Some(glium::glutin::event::VirtualKeyCode::S))
-                            } else {
-                                //gameboy.unpress_key_raw(Some(glium::glutin::event::VirtualKeyCode::S))
-                            }
-                            press = !press;
                         }
                     }
-                }
+                };
 
                 //
                 let gl_window = display.gl_window();
@@ -176,8 +163,25 @@ fn main() {
                         &mut is_playing,
                     );
                     ppu_debugger(ui, &mut gameboy, &oam_stms);
+                }
 
-                    // Screen renders
+                // Setup for drawing
+                let gl_window = display.gl_window();
+                let mut target = display.draw();
+
+                // Renderer doesn't automatically clear window
+                target.clear_color_srgb(1.0, 1.0, 1.0, 1.0);
+
+                // Perform rendering
+                winit_platform.prepare_render(ui, gl_window.window());
+                let draw_data = imgui_context.render();
+                renderer
+                    .render(&mut target, draw_data)
+                    .expect("Rendering failed");
+                target.finish().expect("Failed to swap buffers");
+
+                // Screen renders
+                {
                     // Main display
                     let mut gb_display_buffer: Vec<u8> =
                         Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT * 3);
@@ -216,21 +220,6 @@ fn main() {
                         );
                     }
                 }
-
-                // Setup for drawing
-                let gl_window = display.gl_window();
-                let mut target = display.draw();
-
-                // Renderer doesn't automatically clear window
-                target.clear_color_srgb(1.0, 1.0, 1.0, 1.0);
-
-                // Perform rendering
-                winit_platform.prepare_render(ui, gl_window.window());
-                let draw_data = imgui_context.render();
-                renderer
-                    .render(&mut target, draw_data)
-                    .expect("Rendering failed");
-                target.finish().expect("Failed to swap buffers");
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
