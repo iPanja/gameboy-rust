@@ -7,7 +7,7 @@ use std::{env, thread, time};
 
 use gameboy::ui::rendering::ScreenTextureManager;
 use glium::backend::Facade;
-use glium::glutin::event::{Event, KeyboardInput, WindowEvent};
+use glium::glutin::event::{Event, KeyboardInput, StartCause, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop};
 use glium::texture::{ClientFormat, RawImage2d};
 use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerBehavior};
@@ -69,6 +69,9 @@ fn main() {
 
     // Timer for FPS calculation
     let mut last_frame = std::time::Instant::now();
+    let frame_duration = Duration::from_nanos(1000); // 16_000_000
+    let mut last_gb_frame = Instant::now();
+    let cycles_per_frame = 120f64 * 4194304f64 / 70224f64;
 
     // Screen Renders
     let mut gb_display_manager: ScreenTextureManager = ScreenTextureManager {
@@ -104,33 +107,25 @@ fn main() {
     let mut is_playing: bool = false;
     let mut tick_rate: i16 = 5;
 
-    // > Sleep rate
-    let clock_freq = gameboy.bus.timer.get_clock_freq();
-
     // Standard winit event loop
     event_loop.run(move |event, _, control_flow| {
+        let start_time = Instant::now();
+        //println!("{:?}", event);
         match event {
+            Event::NewEvents(StartCause::ResumeTimeReached { start, requested_resume }) => {
+                // Tick emulator
+                //println!("resume time reached! {:?}\t{:?}", start, requested_resume);
+                perform_gameboy_frame(&mut is_playing, &mut gameboy, cycles_per_frame, &breakpoints);
+                update_display(&mut gameboy, &display, &mut renderer, &mut gb_display_manager, &mut gb_debugger_manager, &mut oam_stms);
+                last_gb_frame = Instant::now();
+            }
             Event::NewEvents(_) => {
                 let now = std::time::Instant::now();
                 imgui_context.io_mut().update_delta_time(now - last_frame);
                 last_frame = now;
+                
             }
             Event::MainEventsCleared => {
-                // Tick emulator
-                {
-                    let mut cycles = 0f64;
-                    if is_playing {
-                        while cycles < gameboy.bus.timer.get_clock_freq() * 2f64 {
-                            cycles += gameboy.step();
-                            if breakpoints.contains(&gameboy.cpu.registers.pc) {
-                                is_playing = false;
-                                break;
-                            }
-                        }
-                    }
-                };
-
-                //
                 let gl_window = display.gl_window();
                 winit_platform
                     .prepare_frame(imgui_context.io_mut(), gl_window.window())
@@ -144,7 +139,6 @@ fn main() {
                 // CREATE UI
                 {
                     //ui.show_demo_window(&mut true); // - DEMO WINDOW
-                    //render_gameboy_window(ui, gb_display_manager, [5.0, 450.0]);
                     render_display_window(
                         ui,
                         ["Main Display", "Tile Map"],
@@ -179,47 +173,6 @@ fn main() {
                     .render(&mut target, draw_data)
                     .expect("Rendering failed");
                 target.finish().expect("Failed to swap buffers");
-
-                // Screen renders
-                {
-                    // Main display
-                    let mut gb_display_buffer: Vec<u8> =
-                        Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT * 3);
-                    gameboy.export_display(&mut gb_display_buffer);
-                    match gb_display_manager.insert_or_update(
-                        display.get_context(),
-                        &mut renderer.textures(),
-                        gb_display_buffer,
-                    ) {
-                        Ok(_id) => {}
-                        Err(_e) => println!("{:?}", _e),
-                    }
-                    // Update Non-Essential Textures
-                    // Tile map
-                    let mut gb_debugger_buffer =
-                        Vec::with_capacity(DEBUGGER_SCREEN_WIDTH * DEBUGGER_SCREEN_HEIGHT);
-                    gameboy.export_tile_map_display(&mut gb_debugger_buffer);
-                    match gb_debugger_manager.insert_or_update(
-                        display.get_context(),
-                        &mut renderer.textures(),
-                        gb_debugger_buffer,
-                    ) {
-                        Ok(_id) => {}
-                        Err(_e) => println!("{:?}", _e),
-                    }
-                    // OAM Sprites
-                    for (index, sprite) in gameboy.bus.ppu.oam.iter().enumerate() {
-                        //for bytes in gameboy.bus.ppu.raw_oam.chunks(4) {
-                        //let tile_index = bytes[2];
-                        let tile_index = sprite[2];
-                        let tile_data = gameboy.bus.ppu.tile_set[tile_index as usize];
-                        let _ = oam_stms[index].insert_or_update(
-                            display.get_context(),
-                            renderer.textures(),
-                            gameboy::PPU::tile_to_vec(&tile_data),
-                        );
-                    }
-                }
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -247,6 +200,8 @@ fn main() {
                 winit_platform.handle_event(imgui_context.io_mut(), gl_window.window(), &event);
             }
         }
+
+        *control_flow = ControlFlow::WaitUntil(last_frame + frame_duration);
     });
 }
 
@@ -282,9 +237,65 @@ fn imgui_init(display: &glium::Display) -> (imgui_winit_support::WinitPlatform, 
     (winit_platform, imgui_context)
 }
 
-/* INPUT HANDLING */
-fn handle_input(gameboy: &mut GameBoy) {}
-
+/* PROCESS */
+fn perform_gameboy_frame(is_playing: &mut bool, gameboy: &mut GameBoy, cycles_per_frame: f64, breakpoints: &Vec<u16>) {
+    let mut cycles = 0f64;
+    if *is_playing {
+        while cycles < cycles_per_frame {
+            //while cycles < gameboy.bus.timer.get_clock_freq() {
+            cycles += gameboy.step();
+            /*if breakpoints.contains(&gameboy.cpu.registers.pc) {
+                *is_playing = false;
+                break;
+            }*/
+            //}
+        }
+        //println!("cycles consumed {:?}", cycles);
+    }
+}
+/* UPDATE DISPLAY BUFFERS */
+fn update_display(gameboy: &mut GameBoy, display: &glium::Display, renderer: &mut imgui_glium_renderer::Renderer, gb_display_manager: &mut ScreenTextureManager, gb_debugger_manager: &mut ScreenTextureManager, oam_stms: &mut Vec<ScreenTextureManager>) {
+    // Screen renders
+    {
+        // Main display
+        let mut gb_display_buffer: Vec<u8> =
+            Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT * 3);
+        gameboy.export_display(&mut gb_display_buffer);
+        match gb_display_manager.insert_or_update(
+            display.get_context(),
+            &mut renderer.textures(),
+            gb_display_buffer,
+        ) {
+            Ok(_id) => {}
+            Err(_e) => println!("{:?}", _e),
+        }
+        // Update Non-Essential Textures
+        // Tile map
+        let mut gb_debugger_buffer =
+            Vec::with_capacity(DEBUGGER_SCREEN_WIDTH * DEBUGGER_SCREEN_HEIGHT);
+        gameboy.export_tile_map_display(&mut gb_debugger_buffer);
+        match gb_debugger_manager.insert_or_update(
+            display.get_context(),
+            &mut renderer.textures(),
+            gb_debugger_buffer,
+        ) {
+            Ok(_id) => {}
+            Err(_e) => println!("{:?}", _e),
+        }
+        // OAM Sprites
+        for (index, sprite) in gameboy.bus.ppu.oam.iter().enumerate() {
+            //for bytes in gameboy.bus.ppu.raw_oam.chunks(4) {
+            //let tile_index = bytes[2];
+            let tile_index = sprite[2];
+            let tile_data = gameboy.bus.ppu.tile_set[tile_index as usize];
+            let _ = oam_stms[index].insert_or_update(
+                display.get_context(),
+                renderer.textures(),
+                gameboy::PPU::tile_to_vec(&tile_data),
+            );
+        }
+    }
+}
 /*    IMGUI WINDOWS RENDERING    */
 fn render_display_window(
     ui: &mut Ui,

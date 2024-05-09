@@ -1,27 +1,17 @@
 mod gameboy;
 
-use std::{borrow::Cow, error::Error, fs::File, io::Read, rc::Rc};
-
-use gameboy::{ppu::Pixel, GameBoy};
-use glow::HasContext;
-use imgui::{
-    sys::{ImTextureID, ImVec2, ImVec2_ImVec2_Float},
-    *,
-};
-use imgui_glium_renderer::Texture;
-use imgui_glow_renderer::AutoRenderer;
-use imgui_sdl2_support::SdlPlatform;
-use sdl2::{
-    event::Event,
-    video::{GLProfile, Window},
-};
-
-use glium::{
-    backend::Facade,
-    texture::{ClientFormat, RawImage2d},
-    uniforms::{MagnifySamplerFilter, MinifySamplerFilter, SamplerBehavior},
-    Texture2d,
-};
+use gameboy::ppu::Pixel;
+use gameboy::{cpu, GameBoy, CPU};
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::pixels::Color;
+use sdl2::rect::Rect;
+use sdl2::render::Canvas;
+use sdl2::video::Window;
+use std::fs::File;
+use std::io::Read;
+use std::{env, fs};
+use std::{fs::OpenOptions, io::prelude::*};
 
 const SCALE: u32 = 2;
 const SCREEN_WIDTH: usize = 160;
@@ -30,8 +20,85 @@ const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
 const TICKS_PER_FRAME: usize = 10;
 
+fn draw_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
+    // Clear canvas as black
+    canvas.set_draw_color(Color::RGB(0, 0, 0));
+    canvas.clear();
+
+    for (y, row) in emu.get_display().iter().enumerate() {
+        for (x, pixel) in row.iter().enumerate() {
+            match pixel {
+                Pixel::White => {
+                    canvas.set_draw_color(Color::RGB(255, 255, 255));
+                }
+                Pixel::LightGray => {
+                    canvas.set_draw_color(Color::RGB(255, 0, 0));
+                }
+                Pixel::DarkGray => {
+                    canvas.set_draw_color(Color::RGB(0, 255, 0));
+                }
+                Pixel::Black => {
+                    canvas.set_draw_color(Color::RGB(0, 0, 0));
+                }
+            }
+
+            let rect = Rect::new(
+                (x as u32 * SCALE) as i32,
+                (y as u32 * SCALE) as i32,
+                SCALE,
+                SCALE,
+            );
+            canvas.fill_rect(rect).unwrap()
+        }
+    }
+
+    canvas.present();
+}
+
+fn draw_debug_screen(emu: &mut GameBoy, canvas: &mut Canvas<Window>) {
+    // Clear canvas as black
+    canvas.set_draw_color(Color::RGB(0, 0, 0));
+    canvas.clear();
+
+    //emu.get_debug_display();
+
+    for (y, row) in emu.get_debug_display().iter().enumerate() {
+        for (x, pixel) in row.iter().enumerate() {
+            match *pixel {
+                Pixel::White => {
+                    canvas.set_draw_color(Color::RGB(255, 255, 255));
+                }
+                Pixel::LightGray => {
+                    canvas.set_draw_color(Color::RGB(255, 0, 0));
+                }
+                Pixel::DarkGray => {
+                    canvas.set_draw_color(Color::RGB(0, 255, 0));
+                }
+                Pixel::Black => {
+                    canvas.set_draw_color(Color::RGB(0, 0, 0));
+                }
+            }
+
+            let rect = Rect::new(
+                (x as u32 * SCALE) as i32,
+                (y as u32 * SCALE) as i32,
+                SCALE,
+                SCALE,
+            );
+            canvas.fill_rect(rect).unwrap()
+        }
+    }
+
+    canvas.present();
+}
+
 fn main() {
-    // Emulator initialization
+    // Clear LOG
+    if cpu::IS_DEBUGGING {
+        fs::remove_file("gb-log");
+    }
+
+    env::set_var("RUST_BACKTRACE", "1");
     // Read boot ROM file
     let mut bootstrap_buffer: Vec<u8> = Vec::new();
     let mut rom_buffer: Vec<u8> = Vec::new();
@@ -47,159 +114,80 @@ fn main() {
     gameboy.read_rom(&bootstrap_buffer);
     gameboy.enable_display();
 
-    /* initialize SDL and its video subsystem */
-    let sdl = sdl2::init().unwrap();
-    let video_subsystem = sdl.video().unwrap();
-
-    /* hint SDL to initialize an OpenGL 3.3 core profile context */
-    let gl_attr = video_subsystem.gl_attr();
-
-    gl_attr.set_context_version(3, 3);
-    gl_attr.set_context_profile(GLProfile::Core);
-
-    /* create a new window, be sure to call opengl method on the builder when using glow! */
+    // Setup SDL
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
-        .window("Game Boy Emulator", 1280, 720)
-        .allow_highdpi()
-        .opengl()
+        .window("Game Boy Emulator", WINDOW_WIDTH, WINDOW_HEIGHT)
         .position_centered()
-        //.resizable()
+        .opengl()
         .build()
         .unwrap();
+    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
+    canvas.clear();
+    canvas.present();
 
-    /* create a new OpenGL context and make it current */
-    let gl_context = window.gl_create_context().unwrap();
-    window.gl_make_current(&gl_context).unwrap();
+    //if IS_DEBUGGING {
+    let debug_window = video_subsystem
+        .window("Game Boy Tile Set Viewer", 16 * 8 * SCALE, 32 * 8 * SCALE)
+        .opengl()
+        .build()
+        .unwrap();
+    let mut debug_canvas = debug_window.into_canvas().present_vsync().build().unwrap();
+    debug_canvas.clear();
+    debug_canvas.present();
+    //}
 
-    /* enable vsync to cap framerate */
-    window.subsystem().gl_set_swap_interval(1).unwrap();
+    draw_screen(&mut gameboy, &mut canvas);
 
-    /* create new glow and imgui contexts */
-    let gl = glow_context(&window);
-
-    /* create context */
-    let mut imgui = Context::create();
-
-    /* disable creation of files on disc */
-    imgui.set_ini_filename(None);
-    imgui.set_log_filename(None);
-
-    /* setup platform and renderer, and fonts to imgui */
-    imgui
-        .fonts()
-        .add_font(&[imgui::FontSource::DefaultFontData { config: None }]);
-
-    /* create platform and renderer */
-    let mut platform = SdlPlatform::init(&mut imgui);
-    let mut renderer = AutoRenderer::initialize(gl, &mut imgui).unwrap();
-
-    /* start main loop */
-    let mut event_pump = sdl.event_pump().unwrap();
-
-    // me
-    let textures: &mut imgui::Textures<imgui_glium_renderer::Texture> =
-        &mut imgui::Textures::<imgui_glium_renderer::Texture>::new();
-    let mut texture_id: Option<TextureId> = None;
-
-    'main: loop {
+    let mut event_pump = sdl_context.event_pump().unwrap();
+    'gameloop: loop {
         for event in event_pump.poll_iter() {
-            /* pass all events to imgui platfrom */
-            platform.handle_event(&mut imgui, &event);
-
-            if let Event::Quit { .. } = event {
-                break 'main;
+            match event {
+                Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } => {
+                    break 'gameloop;
+                }
+                _ => (),
             }
         }
 
-        /* call prepare_frame before calling imgui.new_frame() */
-        platform.prepare_frame(&mut imgui, &window, &event_pump);
-
-        let ui = imgui.new_frame();
-        /* create imgui UI here */
-        ui.show_demo_window(&mut true);
-
-        // DEBUG TILE VIEWER
-        //dummy_texture(gl_context, renderer.texture_map());
-        //let texture_id = TextureId::new(1);
-        //imgui::Image::new(texture_id, [100.0, 100.0]).build(ui);
-
-        ui.window("CPU Registers")
-            .size([192.0, 128.0], imgui::Condition::Appearing)
-            .resizable(true)
-            .build(|| {
-                ui.text(format!("{:?}", gameboy.cpu.registers));
-            });
-
-        ui.window("Display")
-            .size(
-                [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32],
-                Condition::Always,
-            )
-            .resizable(false)
-            .position([5.0, 450.0], Condition::Appearing)
-            .build(|| {
-                if let Some(my_texture_id) = texture_id {
-                    ui.text("Some generated texture");
-                    Image::new(my_texture_id, [SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32])
-                        .build(ui);
-                } else {
-                    ui.text("Failed to load texture");
-                }
-            });
-
-        /*      me     */
-        texture_id = match dummy_texture(gl.get_context(), textures) {
-            Ok(_texture_id) => Some(_texture_id),
-            Err(_box) => None,
-        };
-        /* render */
-        let draw_data = imgui.render();
-
-        unsafe { renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
-        renderer.render(draw_data).unwrap();
-
-        window.gl_swap_window();
-    }
-}
-
-// Create a new glow context.
-fn glow_context(window: &Window) -> glow::Context {
-    unsafe {
-        glow::Context::from_loader_function(|s| window.subsystem().gl_get_proc_address(s) as _)
-    }
-}
-
-fn dummy_texture(
-    gl_ctx: &dyn Facade,
-    textures: &mut Textures<Texture>,
-) -> Result<TextureId, Box<dyn Error>> {
-    let mut data: Vec<u8> = Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT);
-    for i in 0..SCREEN_WIDTH {
-        for j in 0..SCREEN_HEIGHT {
-            // Insert RGB values
-            data.push(i as u8);
-            data.push(j as u8);
-            data.push((i + j) as u8);
+        for _ in 0..TICKS_PER_FRAME {
+            gameboy.tick();
+            //println!("{:#X}", gameboy.cpu.registers.pc);
         }
+        //tick_timers();
+
+        draw_screen(&mut gameboy, &mut canvas);
+        draw_debug_screen(&mut gameboy, &mut debug_canvas);
     }
 
-    let raw = RawImage2d {
-        data: Cow::Owned(data),
-        width: SCREEN_WIDTH as u32,
-        height: SCREEN_HEIGHT as u32,
-        format: ClientFormat::U8U8U8,
-    };
+    /*
+    loop {
+        gameboy.tick();
+    }
+    */
+}
 
-    let gl_texture = Texture2d::new(gl_ctx, raw)?;
-    let texture = Texture {
-        texture: Rc::new(gl_texture),
-        sampler: SamplerBehavior {
-            magnify_filter: MagnifySamplerFilter::Linear,
-            minify_filter: MinifySamplerFilter::Linear,
-            ..Default::default()
-        },
-    };
-    let texture_id = textures.insert(texture);
+pub fn log_data(tile_set: [gameboy::ppu::Tile; 384]) {
+    for tile in tile_set.iter() {
+        //print!("{:?}\n", tile);
+        log(format!("{:?}", tile));
+    }
+    log(format!("--------------------------------\n"));
+}
+fn log(s: String) {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(true)
+        .open("gb-vram-log")
+        .unwrap();
 
-    Ok(texture_id)
+    if let Err(e) = writeln!(file, "{}", s) {
+        eprintln!("Couldn't write to file: {}", e);
+    }
 }
