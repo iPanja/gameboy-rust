@@ -173,7 +173,7 @@ impl Bus {
         self.ram_write_byte(0xFF0F, ifr | mask);
     }
 
-    pub fn tick(&mut self, cycles: u8) {
+    pub fn tick(&mut self, cycles: f64) {
         self.timer.tick(cycles);
 
         let ppu_interrupts = self.ppu.tick(cycles as u16);

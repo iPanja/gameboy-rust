@@ -444,7 +444,6 @@ dependencies = [
  "imgui",
  "imgui-glium-renderer",
  "imgui-glow-renderer",
- "imgui-sdl2-support",
  "imgui-winit-support",
  "sdl2",
 ]
@@ -753,16 +752,6 @@ dependencies = [
  "glow",
  "imgui",
  "memoffset",
-]
-
-[[package]]
-name = "imgui-sdl2-support"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d038368d619b25dc3b1dae4ac894a5781b99247cedb2b9d5c93b9909f56cd135"
-dependencies = [
- "imgui",
- "sdl2",
 ]
 
 [[package]]

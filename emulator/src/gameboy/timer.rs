@@ -59,7 +59,7 @@ impl Timer {
         };
     }
 
-    pub fn tick(&mut self, t_cycles: u8) {
+    pub fn tick(&mut self, t_cycles: f64) {
         self.internal_div = self.internal_div.wrapping_add(t_cycles as u16);
 
         self.pending_tma_reset = match self.pending_tma_reset {

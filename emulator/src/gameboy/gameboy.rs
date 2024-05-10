@@ -44,7 +44,7 @@ impl GameBoy {
     }
 
     pub fn step(&mut self) -> f64 {
-        let _cycles = self.cpu.tick(&mut self.bus);
+        let _cycles = self.cpu.tick(&mut self.bus) as f64;
         self.bus.tick(_cycles);
 
         self.bus.timer.raise_interrupt = match self.bus.timer.raise_interrupt {
@@ -63,7 +63,7 @@ impl GameBoy {
             }
         };
 
-        _cycles as f64
+        _cycles
     }
 
     //
