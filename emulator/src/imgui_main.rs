@@ -153,9 +153,7 @@ fn main() {
                         &mut tick_rate,
                         &mut is_playing,
                     );
-                    if !is_playing {
-                        ppu_debugger(ui, &mut gameboy, &oam_stms);
-                    }
+                    ppu_debugger(ui, &mut gameboy, &oam_stms);
                     if prev_playing != is_playing {
                         first_frame = Instant::now();
                         fps_calc = 0;
@@ -210,7 +208,7 @@ fn main() {
 
         // 
         if is_playing {
-            perform_gameboy_frame(&mut is_playing, &mut gameboy, cycles_per_frame, &breakpoints);
+            perform_gameboy_frame(&mut is_playing, &mut gameboy, cycles_per_frame * 5.0, &breakpoints);
             update_display(&mut gameboy, &display, &mut renderer, &mut gb_display_manager, &mut gb_debugger_manager, &mut oam_stms);
 
             fps_calc += 1;
@@ -718,6 +716,7 @@ fn ppu_debugger(ui: &mut Ui, gameboy: &mut GameBoy, oam_stms: &Vec<ScreenTexture
             ));
             ui.separator();
 
+            /*
             ui.child_window("OAM")
                 .size([275.0, 400.0])
                 .horizontal_scrollbar(true)
@@ -729,5 +728,6 @@ fn ppu_debugger(ui: &mut Ui, gameboy: &mut GameBoy, oam_stms: &Vec<ScreenTexture
                         ui.text(format!("{:#4X}\t\t{:?}", i, sprite));
                     }
                 });
+            */
         });
 }
