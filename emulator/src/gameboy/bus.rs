@@ -88,9 +88,6 @@ impl Bus {
     }
 
     pub fn ram_write_byte(&mut self, address: u16, byte: u8) {
-        if 0xE000 <= address && address <= 0xFDFF {
-            println!("writing echo ram");
-        }
 
         match address {
             0x0000..=0x7FFF => self.mbc.write_byte(address, byte),

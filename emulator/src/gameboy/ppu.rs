@@ -1,4 +1,3 @@
-use sdl2::pixels::Color;
 use std::{
     collections::HashSet,
     fmt,
@@ -38,7 +37,7 @@ pub struct PPU {
     mode_cycles: u16,
     pub scanline_sprite_cache: Vec<Sprite>,
     // Display
-    screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3], // RGB
+    screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4], // RGBA
 }
 
 // https://github.com/Hacktix/GBEDG/blob/master/ppu/index.md#the-concept-of-ppu-modes
@@ -79,16 +78,17 @@ pub enum Pixel {
     Zero,  // 0b00
 }
 
-impl std::convert::From<Pixel> for Color {
-    fn from(pixel: Pixel) -> Color {
-        match pixel {
-            Pixel::Three => Color::RGB(0, 0, 0), // Black
-            Pixel::Two => Color::RGB(85, 85, 85),
-            Pixel::One => Color::RGB(170, 170, 170),
-            Pixel::Zero => Color::RGB(255, 255, 255), // White
+impl Pixel {
+    pub fn rgb_value(&self) -> u8 {
+        match self {
+            Pixel::Three => 0, // Black
+            Pixel::Two => 85,
+            Pixel::One => 170,
+            Pixel::Zero => 255, // White
         }
     }
 }
+
 impl std::convert::From<Pixel> for u8 {
     fn from(pixel: Pixel) -> u8 {
         match pixel {
@@ -247,7 +247,7 @@ impl PPU {
             ob_palette_2: 0,
             wy: 0,
             wx: 0,
-            screen_buffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT * 3],
+            screen_buffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT * 4],
             mode_cycles: 0,
             scanline_sprite_cache: Vec::with_capacity(10),
         }
@@ -454,7 +454,7 @@ impl PPU {
         }
     }
 
-    pub fn get_display(&self) -> &[u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3] {
+    pub fn get_display(&self) -> &[u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4] {
         &self.screen_buffer
     }
 
@@ -482,7 +482,7 @@ impl PPU {
     fn copy_from_tile_set(&self, tile_id: usize) -> Tile {
         match self.get_address_mode() {
             0x8000 => self.tile_set[tile_id as usize],
-            _ => self.tile_set[(tile_id as i8 as i16 + 128) as usize],
+            _ => self.tile_set[(tile_id as i8 as i16 + 256) as usize],
         }
     }
 
@@ -515,10 +515,11 @@ impl PPU {
             let tile_index = bg_map[(bg_tm_y * 32 + tile) % (32 * 32)];
 
             // Access data of that tile ID (depends on current address mode)
-            let tile_data = match self.get_address_mode() {
+            /*let tile_data = match self.get_address_mode() {
                 0x8000 => self.tile_set[tile_index as usize],
-                _ => self.tile_set[(tile_index as i8 as i16 + 128) as usize],
-            };
+                _ => self.tile_set[(tile_index as i8 as i16 + 256) as usize],
+            };*/
+            let tile_data = self.copy_from_tile_set(tile_index as usize);
 
             // A tile is an 8x8 grid of pixels
             // Find which row of the tile we want to display
@@ -631,7 +632,7 @@ impl PPU {
         for tile in 0..32 {
             if tile * 8 >= window_x as usize {
                 let window_col: u8 = (tile as u8) * 8 - window_x;
-                let tile_index = (window_row * 32 + window_col); // % (32 * 32);
+                let tile_index = window_row * 32 + window_col; // % (32 * 32);
 
                 //let tile_data: Tile = self.copy_from_tile_set(tile_index as usize);
                 let tile_data: Tile = self.copy_from_tile_set(tile_index as usize);
@@ -674,9 +675,10 @@ impl PPU {
                 (r, g, b) = self.decode_pixel_color(pixel, self.ob_palette_1, true);
             }
 
-            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 0] = r;
-            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 1] = g;
-            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 3) + (index * 3) + 2] = b;
+            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 0] = r;
+            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 1] = g;
+            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 2] = b;
+            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 3] = b;
         }
     }
 
@@ -795,9 +797,10 @@ impl PPU {
                 }
             }
         };
-        let color = Color::from(Pixel::from(bits as u8));
+        //let color = Color::from(Pixel::from(bits as u8));
+        let gray_value = (Pixel::from(bits as u8)).rgb_value();
 
-        (color.r, color.g, color.b)
+        (gray_value, gray_value, gray_value)
     }
 
     fn decode_pixel(&self, pixel: Pixel, pallete: u8, transparent: bool) -> Pixel {
@@ -822,11 +825,12 @@ impl PPU {
         let mut vec: Vec<u8> = Vec::with_capacity(64 * 4);
         for row in tile {
             for pixel in row {
-                let color = Color::from(*pixel);
+                let gray_value = pixel.rgb_value();
 
-                vec.push(color.r);
-                vec.push(color.g);
-                vec.push(color.b);
+                vec.push(gray_value);
+                vec.push(gray_value);
+                vec.push(gray_value);
+                vec.push(0xFF);
             }
         }
 

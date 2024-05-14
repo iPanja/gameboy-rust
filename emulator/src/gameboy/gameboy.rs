@@ -1,5 +1,3 @@
-use glium::glutin::event::VirtualKeyCode;
-
 use crate::{DEBUGGER_SCREEN_HEIGHT, SCREEN_HEIGHT, SCREEN_WIDTH};
 
 use super::{joypad::JoypadInputKey, ppu::Pixel, Bus, CartridgeHeader, CPU, PPU};
@@ -55,6 +53,7 @@ impl GameBoy {
             }
         };
 
+        self.bus.joypad.read_byte();
         self.bus.joypad.raise_interrupt = match self.bus.joypad.raise_interrupt {
             None => None,
             Some(x) => {
@@ -132,57 +131,12 @@ impl GameBoy {
                     Pixel::One => (pallete >> 2) & 0x3,
                     Pixel::Zero => (pallete >> 0) & 0x3,
                 };
-                let color = sdl2::pixels::Color::from(Pixel::from(bits as u8));
+                let gray_value = (Pixel::from(bits as u8)).rgb_value();
 
-                buffer.push(color.r);
-                buffer.push(color.g);
-                buffer.push(color.b);
+                buffer.push(gray_value);
+                buffer.push(gray_value);
+                buffer.push(gray_value);
             }
-        }
-    }
-
-    //
-    //  Joypad Input
-    //
-    pub fn press_key_raw_imgui(&mut self, raw_key: imgui::Key) {
-        self.bus.joypad.press_key_raw(raw_key);
-    }
-
-    pub fn unpress_key_raw_imgui(&mut self, raw_key: imgui::Key) {
-        self.bus.joypad.unpress_key_raw(raw_key);
-    }
-
-    fn parse_key(&self, raw_key: Option<VirtualKeyCode>) -> Option<JoypadInputKey> {
-        if let Some(raw_key) = raw_key {
-            match raw_key {
-                VirtualKeyCode::F2 => Some(JoypadInputKey::Start),
-                VirtualKeyCode::F1 => Some(JoypadInputKey::Select),
-                VirtualKeyCode::E => Some(JoypadInputKey::A),
-                VirtualKeyCode::Q => Some(JoypadInputKey::B),
-                VirtualKeyCode::W => Some(JoypadInputKey::Up),
-                VirtualKeyCode::A => Some(JoypadInputKey::Left),
-                VirtualKeyCode::S => Some(JoypadInputKey::Down),
-                VirtualKeyCode::D => Some(JoypadInputKey::Right),
-                _ => None,
-            }
-        } else {
-            None
-        }
-    }
-
-    pub fn press_key_raw(&mut self, raw_key: Option<VirtualKeyCode>) {
-        let joypad_key: Option<JoypadInputKey> = self.parse_key(raw_key);
-
-        if let Some(key) = joypad_key {
-            self.bus.joypad.press_key(key);
-        }
-    }
-
-    pub fn unpress_key_raw(&mut self, raw_key: Option<VirtualKeyCode>) {
-        let joypad_key: Option<JoypadInputKey> = self.parse_key(raw_key);
-
-        if let Some(key) = joypad_key {
-            self.bus.joypad.unpress_key(key);
         }
     }
 }

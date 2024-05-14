@@ -1,5 +1,6 @@
 use super::Interrupt;
 
+#[derive(Copy, Clone)]
 pub enum JoypadInputKey {
     Start,
     Select,
@@ -12,20 +13,6 @@ pub enum JoypadInputKey {
 }
 
 impl JoypadInputKey {
-    pub fn parse(key: imgui::Key) -> Option<JoypadInputKey> {
-        match key {
-            imgui::Key::F2 => Some(JoypadInputKey::Start),
-            imgui::Key::F1 => Some(JoypadInputKey::Select),
-            imgui::Key::E => Some(JoypadInputKey::A),
-            imgui::Key::Q => Some(JoypadInputKey::B),
-            imgui::Key::W => Some(JoypadInputKey::Up),
-            imgui::Key::A => Some(JoypadInputKey::Left),
-            imgui::Key::S => Some(JoypadInputKey::Down),
-            imgui::Key::D => Some(JoypadInputKey::Right),
-            _ => None,
-        }
-    }
-
     pub fn input_byte_pos(&self) -> u8 {
         match self {
             JoypadInputKey::Start => 0b1000_0000,
@@ -113,20 +100,8 @@ impl Joypad {
         }
     }
 
-    pub fn press_key_raw(&mut self, key: imgui::Key) {
-        if let Some(joypad_input) = JoypadInputKey::parse(key) {
-            self.press_key(joypad_input);
-        }
-    }
-
     pub fn unpress_key(&mut self, joypad_key: JoypadInputKey) {
         let bit = joypad_key.input_byte_pos();
         self.input_byte |= bit; // Setting bit; 1 = unpressed
-    }
-
-    pub fn unpress_key_raw(&mut self, key: imgui::Key) {
-        if let Some(joypad_input) = JoypadInputKey::parse(key) {
-            self.unpress_key(joypad_input);
-        }
     }
 }
