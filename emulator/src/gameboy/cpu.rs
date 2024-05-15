@@ -1100,7 +1100,7 @@ impl CPU {
             0x00 => 4,
             // HALT
             0x76 => {
-                println!("\tHALT INSTR! {:#X}", self.registers.pc - 1);
+                //println!("\tHALT INSTR! {:#X}", self.registers.pc - 1);
                 self.is_halted = true;
                 4
             }

@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use crate::gui::Framework;
 use error_iter::ErrorIter as _;
 use gameboy::joypad::JoypadInputKey;
+use gameboy::{GameBoy, Joypad};
 use log::error;
 use pixels::{Error, Pixels, SurfaceTexture};
 use winit::dpi::LogicalSize;
@@ -16,10 +17,9 @@ use winit::event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
-use gameboy::{GameBoy, Joypad};
 
-mod gui;
 mod gameboy;
+mod gui;
 
 const SCALE: u32 = 4;
 const SCREEN_WIDTH: usize = 160;
@@ -33,7 +33,7 @@ const CYCLES_PER_FRAME: f64 = (4194304 / 60) as f64;
 /// Representation of the application state. In this example, a box will bounce around the screen.
 struct GameBoyState {
     gameboy: GameBoy,
-    breakpoints: Vec<u16> 
+    breakpoints: Vec<u16>,
 }
 
 fn main() -> Result<(), Error> {
@@ -45,7 +45,7 @@ fn main() -> Result<(), Error> {
         (VirtualKeyCode::Q, JoypadInputKey::A),
         (VirtualKeyCode::E, JoypadInputKey::B),
         (VirtualKeyCode::Right, JoypadInputKey::Start),
-        (VirtualKeyCode::Left, JoypadInputKey::Select)
+        (VirtualKeyCode::Left, JoypadInputKey::Select),
     ]);
 
     env_logger::init();
@@ -78,7 +78,7 @@ fn main() -> Result<(), Error> {
     };
 
     let mut gameboy_state = GameBoyState::new();
-    let frame_duration = Duration::new(0, (1000.0/60.0) as u32);
+    let frame_duration = Duration::new(0, (1000.0 / 60.0) as u32);
     let mut last_frame = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
@@ -109,7 +109,7 @@ fn main() -> Result<(), Error> {
             }
 
             // Update internal state and request a redraw
-            // We aren't necesarrily updating the gameboy's framebuffer, but this will keep the egui responsive 
+            // We aren't necesarrily updating the gameboy's framebuffer, but this will keep the egui responsive
             window.request_redraw();
         }
 
@@ -152,7 +152,7 @@ fn main() -> Result<(), Error> {
                     gameboy_state.update();
                     window.request_redraw();
                 }
-            },
+            }
         }
     });
 }
@@ -172,12 +172,13 @@ impl GameBoyState {
             breakpoints: Vec::new(),
         };
 
-        gbs.gameboy.read_boot_rom(&GameBoyState::read_rom_into_buffer("DMG_ROM.bin"));
-        gbs.gameboy.read_rom(&GameBoyState::read_rom_into_buffer("Dr. Mario.gb"));
+        gbs.gameboy
+            .read_boot_rom(&GameBoyState::read_rom_into_buffer("DMG_ROM.bin"));
+        gbs.gameboy
+            .read_rom(&GameBoyState::read_rom_into_buffer("Tetris.gb"));
 
         gbs
     }
-
 
     fn read_rom_into_buffer(rom_name: &str) -> Vec<u8> {
         let mut buffer: Vec<u8> = Vec::new();
@@ -196,7 +197,11 @@ impl GameBoyState {
         }
     }
 
-    fn update_joypad_state(&mut self, input: &WinitInputHelper, input_mapper: &HashMap<VirtualKeyCode, JoypadInputKey>) {
+    fn update_joypad_state(
+        &mut self,
+        input: &WinitInputHelper,
+        input_mapper: &HashMap<VirtualKeyCode, JoypadInputKey>,
+    ) {
         for (keyboard_code, joypad_key) in input_mapper.iter() {
             if input.key_pressed(*keyboard_code) {
                 //println!("  PRESS: {:?}", keyboard_code);
