@@ -1,6 +1,6 @@
 use std::{fmt::Write, result};
 
-pub(crate) fn parse_opcode(
+pub fn parse_opcode(
     opcode: u8,
     next_byte: u8,
     next_word: u16,

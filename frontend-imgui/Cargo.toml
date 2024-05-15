@@ -1,0 +1,20 @@
+[package]
+name = "frontend-imgui"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+emulator = { path = "../emulator" }
+sdl2 = "0.34.5"
+imgui = {version = "0.11.0", features = ["tables-api"]}
+copypasta = "0.8"
+glium = { version = "0.32.1", default-features = true }
+image = "0.23"
+imgui-glium-renderer = "0.11.0"
+imgui-glow-renderer = "0.11.0"
+imgui-winit-support = "0.11.0"
+imgui-sdl2-support = "0.11.0"
+glow = "0.12.0"
+hex = "0.4.3"

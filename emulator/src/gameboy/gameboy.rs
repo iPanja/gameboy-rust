@@ -136,6 +136,7 @@ impl GameBoy {
                 buffer.push(gray_value);
                 buffer.push(gray_value);
                 buffer.push(gray_value);
+                buffer.push(0xFF);
             }
         }
     }

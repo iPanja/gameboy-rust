@@ -678,7 +678,7 @@ impl PPU {
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 0] = r;
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 1] = g;
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 2] = b;
-            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 3] = b;
+            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 3] = 0xFF;
         }
     }
 
