@@ -555,6 +555,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "frontend-egui"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "emulator",
+ "env_logger",
+ "error-iter",
+ "log",
+ "pixels",
+ "winit",
+ "winit_input_helper",
+]
+
+[[package]]
 name = "gimli"
 version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1549,22 +1565,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "deb68604048ff8fa93347f02441e4487594adc20bb8a084f9e564d2b827a0a9f"
 dependencies = [
  "rustc-hash",
-]
-
-[[package]]
-name = "ui"
-version = "0.1.0"
-dependencies = [
- "egui",
- "egui-wgpu",
- "egui-winit",
- "emulator",
- "env_logger",
- "error-iter",
- "log",
- "pixels",
- "winit",
- "winit_input_helper",
 ]
 
 [[package]]
