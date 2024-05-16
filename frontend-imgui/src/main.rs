@@ -44,13 +44,14 @@ fn main() {
     //let mut rom = std::fs::File::open("../roms/cpu_instrs.gb").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
     let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
+    //let mut rom = std::fs::File::open("../roms/dmg-acid2.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
     // Create emulator
     let mut gameboy = GameBoy::new();
     gameboy.read_rom(&rom_buffer);
-    gameboy.read_boot_rom(&bootstrap_buffer);
+    //gameboy.read_boot_rom(&bootstrap_buffer);
 
     // Common setup for creating a winit window and imgui context, not specifc
     // to this renderer at all except that glutin is used to create the window
@@ -299,10 +300,10 @@ fn perform_gameboy_frame(
         while cycles < cycles_per_frame {
             //while cycles < gameboy.bus.timer.get_clock_freq() {
             cycles += gameboy.step();
-            /*if breakpoints.contains(&gameboy.cpu.registers.pc) {
+            if breakpoints.contains(&gameboy.cpu.registers.pc) {
                 *is_playing = false;
                 break;
-            }*/
+            }
             //}
         }
         //println!("cycles consumed {:?}", cycles);
@@ -755,6 +756,8 @@ fn ppu_debugger(ui: &mut Ui, gameboy: &mut GameBoy, oam_stms: &Vec<ScreenTexture
                 "STAT Reg - {:08b}",
                 gameboy.bus.ram_read_byte(0xFF41)
             ));
+            ui.text(format!("SCY: {:#X}", gameboy.bus.ram_read_byte(0xFF42)));
+            ui.text(format!("SCX: {:#X}", gameboy.bus.ram_read_byte(0xFF43)));
             ui.text(format!(
                 "sprite cache: {:?}",
                 gameboy.bus.ppu.scanline_sprite_cache
