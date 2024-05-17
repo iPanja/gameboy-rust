@@ -36,6 +36,8 @@ pub struct PPU {
     // Internal data structures
     mode_cycles: u16,
     pub scanline_sprite_cache: Vec<Sprite>,
+    window_lc: u8,
+    line_scanned: bool,
     // Display
     screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4], // RGBA
 }
@@ -250,6 +252,8 @@ impl PPU {
             screen_buffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT * 4],
             mode_cycles: 0,
             scanline_sprite_cache: Vec::with_capacity(10),
+            window_lc: 0,
+            line_scanned: false,
         }
     }
 
@@ -277,10 +281,6 @@ impl PPU {
     }
 
     pub fn write_byte(&mut self, index: usize, real_addr: usize, value: u8) {
-        //println!("offset of: {:#X}", index);
-
-        // println!("writing to: {:#X} - {:#X}", real_addr, value);
-
         match real_addr {
             0xFF40 => {
                 self.lcdc = value;
@@ -295,7 +295,7 @@ impl PPU {
                 self.scx = value;
             }
             0xFF44 => {
-                self.ly = value;
+                //self.ly = value; -- Read Only
             }
             0xFF45 => {
                 self.lyc = value;
@@ -411,22 +411,9 @@ impl PPU {
         interrupts.iter().map(|i| *i).collect()
     }
 
-    fn can_access_memory(&mut self) {
-        match self.get_mode() {
-            Mode::HBlank => todo!(),  // Can only access: VRAM, OAM, CGB palletes
-            Mode::VBlank => todo!(),  // Can only access: VRAM, OAM, CGB palletes
-            Mode::OAM => todo!(),     // Can only access: VRAM, CGB palletes
-            Mode::Drawing => todo!(), // Can only access: None!
-        }
-    }
-
     //
     //  Display
     //
-
-    pub fn enable_lcd(&mut self) {
-        self.lcdc |= 0b1010000; //bus.ram.ram[0xFF40] = 0b1010000 | self.vram[0xFF40];
-    }
 
     pub fn is_lcd_enabled(&self) -> bool {
         !(self.lcdc & 0b1000_0000 == 0)
@@ -486,24 +473,38 @@ impl PPU {
         }
     }
 
+    fn get_background_map(&self) -> &[u8; 0x3FF + 1] {
+        match self.lcdc & 0x8 {
+            0 => &self.tile_map_1,
+            _ => &self.tile_map_2,
+        }
+    }
+
+    fn get_window_map(&self) -> &[u8; 0x3FF + 1] {
+        match self.lcdc & 0b100_0000 {
+            0 => &self.tile_map_1,
+            _ => &self.tile_map_2,
+        }
+    }
+
     //
     //  Scanline Rendering
     //
 
-    // Fetch a row (SCREEN_WDITH) of pixels at the current LY
-    // Does NOT take into account the scroll registers (SCX, SCY) as well
+    // Fetch a row (SCREEN_WDITH) of pixels at the current LY + SCY
+    // Does NOT take into account the horizontal scroll register (SCX)
     fn scanline_background(&self, row_buffer: &mut [Pixel; 32 * 8]) {
+        //return;
+
         // LCDC 0 bit - BG & Window enable (DMG)
         if self.lcdc & 0x1 == 0 {
-            *row_buffer = [Pixel::Zero; 32 * 8]; // White background;
+            let fill = self.decode_pixel(Pixel::Zero, self.bg_palette, false);
+            *row_buffer = [fill; 32 * 8]; // White background;
             return;
         }
 
         // Select appropriate background tile map
-        let bg_map: &[u8; 0x3FF + 1] = match self.lcdc & 0x8 {
-            0 => &self.tile_map_1,
-            _ => &self.tile_map_2,
-        };
+        let bg_map: &[u8; 0x3FF + 1] = self.get_background_map();
 
         // Retrieve row of tiles
         let bg_tm_y = (self.scy as usize + self.ly as usize) / 8; // Background Tile Map Y
@@ -515,15 +516,11 @@ impl PPU {
             let tile_index = bg_map[(bg_tm_y * 32 + tile) % (32 * 32)];
 
             // Access data of that tile ID (depends on current address mode)
-            /*let tile_data = match self.get_address_mode() {
-                0x8000 => self.tile_set[tile_index as usize],
-                _ => self.tile_set[(tile_index as i8 as i16 + 256) as usize],
-            };*/
             let tile_data = self.copy_from_tile_set(tile_index as usize);
 
             // A tile is an 8x8 grid of pixels
             // Find which row of the tile we want to display
-            let row_index: usize = (self.scy as usize + self.ly as usize) % 8;
+            let row_index: usize = (self.scy as usize + self.ly as usize) % 8; //(self.ly as usize) % 8;
             let tile_row_data = tile_data[row_index];
 
             // Load that row into the buffer
@@ -534,7 +531,7 @@ impl PPU {
     }
 
     // Fetch a row (SCREEN_WDITH) of pixels at the current LY
-    fn scanline_sprites(&self, row_buffer: &mut [Option<Pixel>; SCREEN_WIDTH]) {
+    fn scanline_sprites(&self, row_buffer: &mut [Option<(Pixel, bool)>; SCREEN_WIDTH]) {
         // Clear row buffer - ensuring we can detect empty tiles properly
         *row_buffer = [None; SCREEN_WIDTH];
 
@@ -568,29 +565,44 @@ impl PPU {
 
     fn draw_scanline_sprite(
         &self,
-        row_buffer: &mut [Option<Pixel>; SCREEN_WIDTH],
+        row_buffer: &mut [Option<(Pixel, bool)>; SCREEN_WIDTH], // (Pixel, Priority)
         sprite: &Sprite,
     ) {
         // Sprite data
         let y_position = sprite[0] as usize;
         let x_position = sprite[1] as usize;
-        let tile_index = sprite[2] as usize;
+        let mut tile_index = sprite[2] as usize;
         let attributes = sprite[3];
 
-        // Draw sprite tile
-        let tile_data: Tile = self.tile_set[tile_index]; // Always uses the $8000 method (unsigned => usize)
+        // Determine which row of the tile to draw
+        let flip_y: bool = attributes & 0b0100_0000 != 0;
         let mut row_index = self.ly + 16 - y_position as u8;
 
-        // Handle attributes
-        // Y Flip
-        row_index = if attributes & 0b0100_0000 != 0 {
-            // Y Flip
-            7 - row_index
-        } else {
-            row_index
-        };
+        // Handle 16-bit sprites - Determine which tile of the two to draw
+        if self.get_sprite_height() == 16 {
+            let mut is_first_tile = row_index < 8;
+            if flip_y {
+                is_first_tile = !is_first_tile;
+            }
 
+            if is_first_tile {
+                tile_index &= !0b1; // Enforce pointing to the first tile (of two) in the 8x16 sprite
+            } else {
+                tile_index |= 0b1; // Enforce pointing to the second tile (of two) in the 8x16 sprite
+            }
+
+            row_index = row_index % 8;
+        }
+
+        // Y Flip
+        if flip_y {
+            row_index = 7 - row_index;
+        }
+
+        // Load sprite tile
+        let tile_data: Tile = self.tile_set[tile_index]; // Always uses the $8000 method (unsigned => usize)
         let mut row_data = tile_data[row_index as usize];
+
         // X Flip
         if attributes & 0b0010_0000 != 0 {
             row_data.reverse();
@@ -601,6 +613,9 @@ impl PPU {
             true => &self.ob_palette_1,
             false => &self.ob_palette_2,
         };
+
+        // Priority
+        let priority = attributes & 0b1000_0000 != 0;
 
         for dx in 0..8 {
             // Off the left side of the screen
@@ -613,44 +628,73 @@ impl PPU {
             }
 
             let pixel = self.decode_pixel(row_data[dx], *palette, true);
-            row_buffer[x_position - 8 + dx] = Some(pixel);
-        }
-    }
-
-    fn scanline_window(&self, row_buffer: &mut [Option<Pixel>; SCREEN_WIDTH]) {
-        *row_buffer = [None; SCREEN_WIDTH];
-
-        if self.ly < self.wy || !self.is_window_enabled() || self.lcdc & 0x1 == 0 {
-            return;
-        }
-
-        let window_y = self.wy;
-        let window_x = self.wx - 7;
-
-        let window_row = (self.ly - window_y) / 8;
-
-        for tile in 0..32 {
-            if tile * 8 >= window_x as usize {
-                let window_col: u8 = (tile as u8) * 8 - window_x;
-                let tile_index = window_row * 32 + window_col; // % (32 * 32);
-
-                //let tile_data: Tile = self.copy_from_tile_set(tile_index as usize);
-                let tile_data: Tile = self.copy_from_tile_set(tile_index as usize);
-                let row_data: [Pixel; 8] = tile_data[((self.ly - window_y) % 8) as usize];
-
-                for dx in 0..8 {
-                    row_buffer[tile * 8 + dx] = Some(row_data[dx]);
-                }
+            if pixel != Pixel::Zero {
+                row_buffer[x_position - 8 + dx] = Some((pixel, priority));
             }
         }
     }
 
+    fn scanline_window(&mut self, row_buffer: &mut [Option<Pixel>; SCREEN_WIDTH]) {
+        *row_buffer = [None; SCREEN_WIDTH];
+
+        // Window disabled - do not render
+        if !self.is_window_enabled() {
+            return;
+        }
+
+        // LCDC bit 0 - fill window with white pixels
+        if self.lcdc & 0x1 == 0 {
+            let fill = self.decode_pixel(Pixel::Zero, self.bg_palette, false);
+            *row_buffer = [Some(fill); SCREEN_WIDTH]; // White background;
+        }
+
+        // Not currently in window (vertically)
+        if self.ly < self.wy {
+            return;
+        }
+
+        // Off the screen window (horizontally)
+        if self.wx >= 168 {
+            return;
+        }
+
+        println!("window @ly={:?}\t({:?}, {:?})", self.ly, self.wx, self.wy);
+
+        let window_map: &[u8; 0x3FF + 1] = self.get_window_map();
+
+        // Render window when inside of it
+        for x in (0..SCREEN_WIDTH) {
+            if x + 8 < self.wx as usize {
+                continue; // Have not reached the window yet
+            }
+
+            let window_x = x - (self.wx as usize - 8);
+            let window_y = self.window_lc as usize;
+            let window_index = (window_y / 8 * 32 + window_x / 8) % (32 * 32);
+            let tile_index = window_map[window_index] as usize;
+
+            let tile_data: Tile = self.copy_from_tile_set(tile_index);
+            let tile_row = window_y % 8;
+            let row_data = tile_data[tile_row];
+
+            row_buffer[x] = Some(row_data[window_x % 8]);
+        }
+
+        // Increment internal window line counter (window y)
+        self.window_lc += 1;
+    }
+
     fn scanline_render(&mut self) {
+        if self.line_scanned {
+            return;
+        }
+        self.line_scanned = true;
+
         // Scanline background
         let mut bg_buffer: [Pixel; 32 * 8] = [Pixel::Zero; 32 * 8];
         self.scanline_background(&mut bg_buffer);
         // Scanline sprites
-        let mut sprite_buffer: [Option<Pixel>; SCREEN_WIDTH] = [None; SCREEN_WIDTH];
+        let mut sprite_buffer: [Option<(Pixel, bool)>; SCREEN_WIDTH] = [None; SCREEN_WIDTH];
         self.scanline_sprites(&mut sprite_buffer);
         // Scanline window
         let mut window_buffer: [Option<Pixel>; SCREEN_WIDTH] = [None; SCREEN_WIDTH];
@@ -658,6 +702,7 @@ impl PPU {
 
         // Rotate buffer to simulate starting at SCX
         bg_buffer.rotate_left(self.scx as usize);
+
         // Trim to screen-width (since scanline_background returns 32 tiles of pixels from the background, and the viewport only supports 20 tiles of pixels in a row)
         let background = &bg_buffer[0..SCREEN_WIDTH];
 
@@ -665,14 +710,17 @@ impl PPU {
         for (index, bg_pixel) in background.iter().enumerate() {
             let (mut r, mut g, mut b) = self.decode_bg_pixel(*bg_pixel);
 
-            let sprite_pixel = sprite_buffer[index];
-            if let Some(pixel) = sprite_pixel {
-                (r, g, b) = self.decode_pixel_color(pixel, self.ob_palette_1, true);
-            }
-
             let window_pixel = window_buffer[index];
             if let Some(pixel) = window_pixel {
-                (r, g, b) = self.decode_pixel_color(pixel, self.ob_palette_1, true);
+                (r, g, b) = self.decode_pixel_color(pixel, self.bg_palette, true);
+            }
+
+            let sprite_pixel = sprite_buffer[index];
+            if let Some((pixel, priority)) = sprite_pixel {
+                let gray_value = pixel.rgb_value();
+                if !priority || (priority && *bg_pixel == Pixel::Zero) && pixel != Pixel::Zero {
+                    (r, g, b) = (gray_value, gray_value, gray_value); //self.decode_pixel_color(pixel, self.ob_palette_1, true);
+                }
             }
 
             self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 0] = r;
@@ -684,13 +732,26 @@ impl PPU {
 
     fn build_sprite_cache(&mut self) {
         self.scanline_sprite_cache = Vec::with_capacity(10);
-        for sprite in self.oam.iter() {
+        let sprite_height = self.get_sprite_height();
+
+        for (i, sprite) in self.oam.iter().enumerate() {
             let y_position = sprite[0];
             let x_position = sprite[1];
 
+            // edge case
+            if sprite_height == 16 {
+                // 8x16 sprite
+                if y_position > 7 {
+                    // Second tile
+                    if self.ly + 16 > y_position + 7 {
+                        //continue;
+                    }
+                }
+            }
+
             if x_position > 0
                 && self.ly + 16 >= y_position
-                && self.ly + 16 < y_position + self.get_sprite_height()
+                && self.ly + 16 < y_position + sprite_height
                 && self.scanline_sprite_cache.len() < 10
             {
                 self.scanline_sprite_cache.push(*sprite);
@@ -731,13 +792,18 @@ impl PPU {
                 } else if self.mode_cycles < (80 + 172) {
                     //println!("\tline render");
                     //println!("bg: {:#08b}", self.bg_palette);
-                    self.scanline_render();
                     raised_interrupts.append(&mut self.set_mode(Mode::Drawing));
                 } else if self.mode_cycles < 456 {
                     //println!("\thblank");
+                    if let Some(interrupt) = self.check_lyc_interrupt() {
+                        raised_interrupts.push(interrupt);
+                    }
+
                     raised_interrupts.append(&mut self.set_mode(Mode::HBlank));
                 } else {
                     //println!("\t=> next line!");
+                    self.scanline_render();
+                    self.line_scanned = false;
                     self.ly = (self.ly + 1) % 154;
                     raised_interrupts.append(&mut self.set_mode(Mode::OAM));
 
@@ -749,8 +815,9 @@ impl PPU {
             } else {
                 //println!("\tVBLANK");
                 // VBlank Lines
-                raised_interrupts.append(&mut self.set_mode(Mode::VBlank));
+
                 if self.mode_cycles > 456 {
+                    // Increment LY
                     self.ly = (self.ly + 1) % 154;
 
                     if let Some(interrupt) = self.check_lyc_interrupt() {
@@ -759,6 +826,9 @@ impl PPU {
 
                     if self.ly < 144 {
                         self.set_mode(Mode::OAM);
+                    } else {
+                        raised_interrupts.append(&mut self.set_mode(Mode::VBlank));
+                        self.window_lc = 0; // Reset internal window line counter
                     }
 
                     self.mode_cycles = self.mode_cycles % 456;
@@ -771,11 +841,12 @@ impl PPU {
     }
 
     fn check_lyc_interrupt(&mut self) -> Option<Interrupt> {
-        if self.ly == self.lyc && self.stat & 0b10_0000 != 0 {
-            self.stat |= 0b10;
+        if self.ly == self.lyc && self.stat & 0b100_0000 != 0 {
+            self.stat |= 0b100;
+            //println!("LYC interrupt @ LY=LYC={:#X}", self.lyc);
             Some(Interrupt::LCD)
         } else {
-            self.stat &= !0b10;
+            self.stat &= !0b100;
             None
         }
     }

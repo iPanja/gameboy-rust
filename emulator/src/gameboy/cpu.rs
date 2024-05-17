@@ -21,7 +21,7 @@ pub struct CPU {
 impl CPU {
     pub fn new() -> Self {
         CPU {
-            registers: Registers::new(), // Registers::new_post_boot_rom() ; new()
+            registers: Registers::new_post_boot_rom(), //Registers::new()
             is_halted: false,
             interrupt_action: Option::None,
             interrupts_enabled: false,
