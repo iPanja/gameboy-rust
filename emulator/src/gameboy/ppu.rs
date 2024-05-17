@@ -654,21 +654,19 @@ impl PPU {
         }
 
         // Off the screen window (horizontally)
-        if self.wx >= 168 {
+        if self.wx >= 168 || self.wx == 0 {
             return;
         }
-
-        println!("window @ly={:?}\t({:?}, {:?})", self.ly, self.wx, self.wy);
 
         let window_map: &[u8; 0x3FF + 1] = self.get_window_map();
 
         // Render window when inside of it
         for x in (0..SCREEN_WIDTH) {
-            if x + 8 < self.wx as usize {
+            if x + 8 <= self.wx as usize {
                 continue; // Have not reached the window yet
             }
 
-            let window_x = x - (self.wx as usize - 8);
+            let window_x = x - (self.wx as usize - 7);
             let window_y = self.window_lc as usize;
             let window_index = (window_y / 8 * 32 + window_x / 8) % (32 * 32);
             let tile_index = window_map[window_index] as usize;
