@@ -43,8 +43,8 @@ fn main() {
     let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/cpu_instrs.gb").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/individual/01-special.gb").expect("INVALID ROM");
-    let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
-    //let mut rom = std::fs::File::open("../roms/dmg-acid2.gb").expect("INVALID ROM");
+    //let mut rom = std::fs::File::open("../roms/Tetris.gb").expect("INVALID ROM");
+    let mut rom = std::fs::File::open("../roms/dmg-acid2.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
 
@@ -70,8 +70,8 @@ fn main() {
     let mut first_frame = Instant::now(); // Used to keep track of current fps
     let mut last_frame = std::time::Instant::now(); // Used by imgui for time/delta manipulation
     let frame_duration = Duration::new(0, (1000.0 / 60.0) as u32);
-    let mut last_gb_frame = Instant::now(); // Used to track last gameboy frame
     let cycles_per_frame = (4194304 / 60) as f64; //4194304f64 / 70224f64;
+    let mut last_gb_frame = Instant::now(); // Used to track last gameboy frame
     let mut frame_count = 0;
 
     // Screen Renders
