@@ -10,6 +10,7 @@ pub struct Timer {
     tac: u8, // Timer control - 0xFF07
     // Internal Registers
     internal_div: u16,
+    internal_tima: u16,
     prev_and_result: bool,
     pending_tma_reset: u8,
     // Raise timer interrupt
@@ -24,6 +25,7 @@ impl Timer {
             tma: 0,
             tac: 0,
             internal_div: 0,
+            internal_tima: 0,
             prev_and_result: false,
             pending_tma_reset: 0,
             raise_interrupt: None,
@@ -32,7 +34,8 @@ impl Timer {
 
     pub fn read_byte(&self, index: usize) -> u8 {
         match index {
-            0x00 => ((self.internal_div & 0xFF00) >> 8) as u8,
+            //0x00 => ((self.internal_div & 0xFF00) >> 8) as u8,
+            0x00 => self.div,
             0x01 => self.tima,
             0x02 => self.tma,
             0x03 => self.tac,
@@ -45,7 +48,8 @@ impl Timer {
 
     pub fn write_byte(&mut self, index: usize, value: u8) {
         match index {
-            0x00 => self.internal_div = 0x00, // Writing any value to this register resets it to 0x00
+            //0x00 => self.internal_div = 0x00, // Writing any value to this register resets it to 0x00
+            0x00 => self.div = 0,
             0x01 => {
                 self.tima = value;
                 self.pending_tma_reset = 0
@@ -60,34 +64,31 @@ impl Timer {
     }
 
     pub fn tick(&mut self, t_cycles: f64) {
-        self.internal_div = self.internal_div.wrapping_add(t_cycles as u16);
+        if t_cycles == 0.0 {
+            return;
+        }
 
-        self.pending_tma_reset = match self.pending_tma_reset {
-            1 => {
-                self.tima = self.tma;
-                self.raise_interrupt = Some(Interrupt::Timer);
-                0
-            }
-            0 => 0,
-            x => x - 1,
-        };
+        // 1 tick @ 16384 Hz = 256 cycles (markau)
+        self.internal_div += t_cycles as u16;
+        while self.internal_div >= 256 {
+            self.div = self.div.wrapping_add(1);
+            self.internal_div -= 256;
+        }
 
-        let bit_pos = match self.tac & 0x3 {
-            0b00 => 9,
-            0b01 => 3,
-            0b10 => 5,
-            0b11 => 7,
-            _ => panic!("Unsupported??? {:#X}", self.tac & 0x3),
-        };
-        let bit = self.internal_div & (0b1 << bit_pos);
+        // Increment TIMA, handle overflow (triggers an interrupt)
+        if self.is_timer_enabled() {
+            self.internal_tima += t_cycles as u16;
+            let clock_select = self.get_clock_select();
 
-        let and_result = bit != 0 && self.is_clock_enabled();
-        if !self.prev_and_result && and_result {
-            // Looking for falling edge (1 -> 0)
-            self.tima = self.tima.wrapping_add(1);
-            // Delay overflow checking
-            if self.tima == 0x00 {
-                self.pending_tma_reset = 5;
+            while self.internal_tima >= clock_select {
+                self.internal_tima -= clock_select;
+                self.tima = self.tima.wrapping_add(1);
+
+                if self.tima == 0x00 {
+                    // TIMA overflow
+                    self.raise_interrupt = Some(Interrupt::Timer);
+                    self.tima = self.tma;
+                }
             }
         }
     }
@@ -103,7 +104,17 @@ impl Timer {
             } as f64
     }
 
-    fn is_clock_enabled(&self) -> bool {
+    pub fn get_clock_select(&self) -> u16 {
+        match self.tac & 0x3 {
+            0b00 => 1024, // Frequency 4096
+            0b01 => 16,   // Frqeuency 262144
+            0b10 => 64,   // Frequency 65536
+            0b11 => 256,  // Frequency 16382
+            _ => panic!("Invalid clock freq!"),
+        }
+    }
+
+    fn is_timer_enabled(&self) -> bool {
         return self.tac & 0x4 != 0;
     }
 }

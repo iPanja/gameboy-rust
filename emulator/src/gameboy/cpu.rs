@@ -1344,7 +1344,7 @@ impl CPU {
             0x10 => {
                 let _useless_byte = self.read_byte(bus);
                 println!("STOPPING @ {:#X}", self.registers.pc);
-                self.is_halted = true;
+                //self.is_halted = true;
                 4
             }
             // NOT FOUND!

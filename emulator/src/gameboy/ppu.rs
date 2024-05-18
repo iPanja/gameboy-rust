@@ -767,7 +767,7 @@ impl PPU {
 
         if !self.is_lcd_enabled() {
             //println!("LCD DISABLED!");
-            return raised_interrupts;
+            //return raised_interrupts;
         }
 
         self.mode_cycles += _cycles;
@@ -802,8 +802,10 @@ impl PPU {
                     raised_interrupts.append(&mut self.set_mode(Mode::HBlank));
                 } else {
                     //println!("\t=> next line!");
-                    self.scanline_render();
-                    self.line_scanned = false;
+                    if self.is_lcd_enabled() {
+                        self.scanline_render();
+                        self.line_scanned = false;
+                    }
                     self.ly = (self.ly + 1) % 154;
                     raised_interrupts.append(&mut self.set_mode(Mode::OAM));
 
