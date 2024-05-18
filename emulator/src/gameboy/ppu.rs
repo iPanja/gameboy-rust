@@ -629,7 +629,7 @@ impl PPU {
 
             let pixel = self.decode_pixel(row_data[dx], *palette, true);
             if pixel != Pixel::Zero {
-                row_buffer[x_position - 8 + dx] = Some((pixel, priority));
+                row_buffer[x_position + dx - 8] = Some((pixel, priority));
             }
         }
     }
@@ -661,7 +661,9 @@ impl PPU {
         let window_map: &[u8; 0x3FF + 1] = self.get_window_map();
 
         // Render window when inside of it
-        for x in (0..SCREEN_WIDTH) {
+        // TODO - make this more efficient
+        //  > currently copies the tile 8 times as it only reads one pixel each time it is copied
+        for x in 0..SCREEN_WIDTH {
             if x + 8 <= self.wx as usize {
                 continue; // Have not reached the window yet
             }
@@ -818,14 +820,16 @@ impl PPU {
                     // Increment LY
                     self.ly = (self.ly + 1) % 154;
 
-                    if let Some(interrupt) = self.check_lyc_interrupt() {
-                        raised_interrupts.push(interrupt);
-                    }
+                    //if let Some(interrupt) = self.check_lyc_interrupt() {
+                    //raised_interrupts.push(interrupt);
+                    //}
 
                     if self.ly < 144 {
                         self.set_mode(Mode::OAM);
                     } else {
-                        raised_interrupts.append(&mut self.set_mode(Mode::VBlank));
+                        if self.get_mode() != Mode::VBlank {
+                            raised_interrupts.append(&mut self.set_mode(Mode::VBlank));
+                        }
                         self.window_lc = 0; // Reset internal window line counter
                     }
 

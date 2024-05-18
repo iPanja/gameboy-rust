@@ -1343,17 +1343,19 @@ impl CPU {
             // STOP
             0x10 => {
                 let _useless_byte = self.read_byte(bus);
-                //println!("STOPPING");
-                //self.is_halted = true;
+                println!("STOPPING @ {:#X}", self.registers.pc);
+                self.is_halted = true;
                 4
             }
             // NOT FOUND!
             _ => {
-                panic!(
+                println!(
                     "Instruction {:#X} not supported: {:#X}",
                     self.registers.pc - 1,
                     opcode
                 );
+                self.registers.pc -= 1;
+                0
             }
         };
 
