@@ -43,7 +43,8 @@ fn main() {
     let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/instr_timing.gb").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/individual/02-interrupts.gb").expect("INVALID ROM");
-    let mut rom = std::fs::File::open("../roms/Kirby.gb").expect("INVALID ROM");
+
+    let mut rom = std::fs::File::open("../roms/Super Mario Land.gb").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/dmg-acid2.gb").expect("INVALID ROM");
     bootstrap_rom.read_to_end(&mut bootstrap_buffer).unwrap();
     rom.read_to_end(&mut rom_buffer).unwrap();
@@ -114,10 +115,10 @@ fn main() {
         (VirtualKeyCode::A, JoypadInputKey::Left),
         (VirtualKeyCode::S, JoypadInputKey::Down),
         (VirtualKeyCode::D, JoypadInputKey::Right),
-        (VirtualKeyCode::Q, JoypadInputKey::A),
-        (VirtualKeyCode::E, JoypadInputKey::B),
-        (VirtualKeyCode::Right, JoypadInputKey::Start),
-        (VirtualKeyCode::Left, JoypadInputKey::Select),
+        (VirtualKeyCode::Right, JoypadInputKey::A),
+        (VirtualKeyCode::Left, JoypadInputKey::B),
+        (VirtualKeyCode::Q, JoypadInputKey::Start),
+        (VirtualKeyCode::E, JoypadInputKey::Select),
     ]);
 
     // Standard winit event loop

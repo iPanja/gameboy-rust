@@ -83,10 +83,10 @@ pub enum Pixel {
 impl Pixel {
     pub fn rgb_value(&self) -> u8 {
         match self {
-            Pixel::Three => 0, // Black
-            Pixel::Two => 85,
-            Pixel::One => 170,
             Pixel::Zero => 255, // White
+            Pixel::One => 170,
+            Pixel::Two => 85,
+            Pixel::Three => 0, // Black
         }
     }
 }
@@ -107,7 +107,8 @@ impl std::convert::From<u8> for Pixel {
             0b11 => Pixel::Three,
             0b10 => Pixel::Two,
             0b01 => Pixel::One,
-            _ => Pixel::Zero,
+            0b00 => Pixel::Zero,
+            _ => panic!("error converting to pixel from: {:?}", byte),
         }
     }
 }
@@ -115,10 +116,10 @@ impl std::convert::From<u8> for Pixel {
 impl fmt::Debug for Pixel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Pixel::Three => write!(f, "W"),
-            Pixel::One => write!(f, " "),
-            Pixel::Two => write!(f, "+"),
-            Pixel::Zero => write!(f, "B"),
+            Pixel::Zero => write!(f, "0"),  // White
+            Pixel::One => write!(f, "1"),   // Light Gray
+            Pixel::Two => write!(f, "2"),   // Dark Gray
+            Pixel::Three => write!(f, "3"), // Black
         }
     }
 }
@@ -270,7 +271,7 @@ impl PPU {
             0xFF49 => self.ob_palette_2,
             0xFF4A => self.wy,
             0xFF4B => self.wx,
-            0x8000..=0x97FF => self.read_tile_set_data_as_byte(real_addr - 0x8000),
+            0x8000..=0x97FF => self.raw_tile_vram[real_addr - 0x8000],
             0x9800..=0x9BFF => self.tile_map_1[real_addr - 0x9800],
             0x9C00..=0x9FFF => self.tile_map_2[real_addr - 0x9C00],
             0xFE00..=0xFE9F => self.raw_oam[real_addr - 0xFE00],
@@ -358,10 +359,6 @@ impl PPU {
 
             self.tile_set[tile_index][row_index][pixel_index] = value;
         }
-    }
-
-    fn read_tile_set_data_as_byte(&self, index: usize) -> u8 {
-        self.raw_tile_vram[index]
     }
 
     fn write_oam_data(&mut self, index: usize, byte: u8) {
@@ -473,6 +470,13 @@ impl PPU {
         }
     }
 
+    fn borrow_from_tile_set(&self, tile_id: usize) -> &Tile {
+        match self.get_address_mode() {
+            0x8000 => &self.tile_set[tile_id as usize],
+            _ => &self.tile_set[(tile_id as i8 as i16 + 256) as usize],
+        }
+    }
+
     fn get_background_map(&self) -> &[u8; 0x3FF + 1] {
         match self.lcdc & 0x8 {
             0 => &self.tile_map_1,
@@ -498,7 +502,7 @@ impl PPU {
 
         // LCDC 0 bit - BG & Window enable (DMG)
         if self.lcdc & 0x1 == 0 {
-            let fill = self.decode_pixel(Pixel::Zero, self.bg_palette, false);
+            let fill = self.apply_pixel_pallete(Pixel::Zero, &self.bg_palette);
             *row_buffer = [fill; 32 * 8]; // White background;
             return;
         }
@@ -516,16 +520,15 @@ impl PPU {
             let tile_index = bg_map[(bg_tm_y * 32 + tile) % (32 * 32)];
 
             // Access data of that tile ID (depends on current address mode)
-            let tile_data = self.copy_from_tile_set(tile_index as usize);
+            let tile_data: &Tile = self.borrow_from_tile_set(tile_index as usize);
 
             // A tile is an 8x8 grid of pixels
             // Find which row of the tile we want to display
             let row_index: usize = (self.scy as usize + self.ly as usize) % 8; //(self.ly as usize) % 8;
-            let tile_row_data = tile_data[row_index];
 
             // Load that row into the buffer
             for dx in 0..8 {
-                row_buffer[(tile as usize) * 8 + dx] = tile_row_data[dx];
+                row_buffer[(tile as usize) * 8 + dx] = tile_data[row_index][dx];
             }
         }
     }
@@ -540,7 +543,7 @@ impl PPU {
         }
 
         // Check all cached sprites (max 10) that occur on this scanline (self.ly)
-        // The cache is already sored by sprites' x-positions, so we can draw and overwrite sprites in the REVERSE order of this vector
+        // The cache is already sorted by sprites' x-positions, so we can draw and overwrite sprites in the REVERSE order of this vector
         for sprite in self.scanline_sprite_cache.iter().rev() {
             // Sprite data
             let y_position = sprite[0] as usize;
@@ -600,7 +603,7 @@ impl PPU {
         }
 
         // Load sprite tile
-        let tile_data: Tile = self.tile_set[tile_index]; // Always uses the $8000 method (unsigned => usize)
+        let tile_data: &Tile = &self.tile_set[tile_index]; // Always uses the $8000 method (unsigned => usize)
         let mut row_data = tile_data[row_index as usize];
 
         // X Flip
@@ -627,8 +630,8 @@ impl PPU {
                 continue;
             }
 
-            let pixel = self.decode_pixel(row_data[dx], *palette, true);
-            if pixel != Pixel::Zero {
+            let pixel = self.apply_pixel_pallete_sprite(row_data[dx], palette);
+            if let Some(pixel) = pixel {
                 row_buffer[x_position + dx - 8] = Some((pixel, priority));
             }
         }
@@ -644,7 +647,7 @@ impl PPU {
 
         // LCDC bit 0 - fill window with white pixels
         if self.lcdc & 0x1 == 0 {
-            let fill = self.decode_pixel(Pixel::Zero, self.bg_palette, false);
+            let fill = self.apply_pixel_pallete(Pixel::Zero, &self.bg_palette);
             *row_buffer = [Some(fill); SCREEN_WIDTH]; // White background;
         }
 
@@ -661,23 +664,21 @@ impl PPU {
         let window_map: &[u8; 0x3FF + 1] = self.get_window_map();
 
         // Render window when inside of it
-        // TODO - make this more efficient
-        //  > currently copies the tile 8 times as it only reads one pixel each time it is copied
+        let window_y = self.window_lc as usize;
+        let tile_row = window_y % 8;
+
         for x in 0..SCREEN_WIDTH {
             if x + 8 <= self.wx as usize {
                 continue; // Have not reached the window yet
             }
 
-            let window_x = x - (self.wx as usize - 7);
-            let window_y = self.window_lc as usize;
+            let window_x = x + 7 - (self.wx as usize);
+
             let window_index = (window_y / 8 * 32 + window_x / 8) % (32 * 32);
             let tile_index = window_map[window_index] as usize;
 
-            let tile_data: Tile = self.copy_from_tile_set(tile_index);
-            let tile_row = window_y % 8;
-            let row_data = tile_data[tile_row];
-
-            row_buffer[x] = Some(row_data[window_x % 8]);
+            let tile_data: &Tile = self.borrow_from_tile_set(tile_index);
+            row_buffer[x] = Some(tile_data[tile_row][window_x % 8]);
         }
 
         // Increment internal window line counter (window y)
@@ -700,7 +701,7 @@ impl PPU {
         let mut window_buffer: [Option<Pixel>; SCREEN_WIDTH] = [None; SCREEN_WIDTH];
         self.scanline_window(&mut window_buffer);
 
-        // Rotate buffer to simulate starting at SCX
+        // Rotate background buffer to simulate starting at SCX
         bg_buffer.rotate_left(self.scx as usize);
 
         // Trim to screen-width (since scanline_background returns 32 tiles of pixels from the background, and the viewport only supports 20 tiles of pixels in a row)
@@ -708,46 +709,48 @@ impl PPU {
 
         // Merge scanlines into final result to be displayed
         for (index, bg_pixel) in background.iter().enumerate() {
-            let (mut r, mut g, mut b) = self.decode_bg_pixel(*bg_pixel);
+            // Merge background and window
+            let mut output_pixel = {
+                if let Some(window_pixel) = window_buffer[index] {
+                    window_pixel
+                } else {
+                    *bg_pixel
+                }
+            };
+            // Apply background color pallete (same pallete for both background & window)
+            output_pixel = self.apply_pixel_pallete(output_pixel, &self.bg_palette);
 
-            let window_pixel = window_buffer[index];
-            if let Some(pixel) = window_pixel {
-                (r, g, b) = self.decode_pixel_color(pixel, self.bg_palette, true);
-            }
-
-            let sprite_pixel = sprite_buffer[index];
-            if let Some((pixel, priority)) = sprite_pixel {
-                let gray_value = pixel.rgb_value();
-                if !priority || (priority && *bg_pixel == Pixel::Zero) && pixel != Pixel::Zero {
-                    (r, g, b) = (gray_value, gray_value, gray_value); //self.decode_pixel_color(pixel, self.ob_palette_1, true);
+            // Layer sprite, taking into account it's priority
+            // Note: sprite transparency has already been handled. If the pixel is transparent, sprite_tuple will be None.
+            let sprite_tuple = sprite_buffer[index];
+            if let Some((sprite_pixel, priority)) = sprite_tuple {
+                if !priority || (priority && output_pixel == Pixel::Zero) {
+                    output_pixel = sprite_pixel;
                 }
             }
 
-            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 0] = r;
-            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 1] = g;
-            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 2] = b;
-            self.screen_buffer[(self.ly as usize * SCREEN_WIDTH * 4) + (index * 4) + 3] = 0xFF;
+            // Push to internal frame buffer
+            let buffer_index = (self.ly as usize * SCREEN_WIDTH * 4) + (index * 4);
+            PPU::push_pixel(&mut self.screen_buffer, buffer_index, &output_pixel);
         }
+    }
+
+    fn push_pixel<const COUNT: usize>(buffer: &mut [u8; COUNT], index: usize, pixel: &Pixel) {
+        let gray_value = pixel.rgb_value();
+
+        buffer[index + 0] = gray_value;
+        buffer[index + 1] = gray_value;
+        buffer[index + 2] = gray_value;
+        buffer[index + 3] = 0xFF;
     }
 
     fn build_sprite_cache(&mut self) {
         self.scanline_sprite_cache = Vec::with_capacity(10);
         let sprite_height = self.get_sprite_height();
 
-        for (i, sprite) in self.oam.iter().enumerate() {
+        for sprite in self.oam.iter() {
             let y_position = sprite[0];
             let x_position = sprite[1];
-
-            // edge case
-            if sprite_height == 16 {
-                // 8x16 sprite
-                if y_position > 7 {
-                    // Second tile
-                    if self.ly + 16 > y_position + 7 {
-                        //continue;
-                    }
-                }
-            }
 
             if x_position > 0
                 && self.ly + 16 >= y_position
@@ -855,47 +858,31 @@ impl PPU {
         }
     }
 
-    fn decode_bg_pixel(&self, pixel: Pixel) -> (u8, u8, u8) {
-        self.decode_pixel_color(pixel, self.bg_palette, false)
-    }
-
-    fn decode_pixel_color(&self, pixel: Pixel, pallete: u8, transparent: bool) -> (u8, u8, u8) {
+    fn apply_pixel_pallete(&self, pixel: Pixel, pallete: &u8) -> Pixel {
         let bits = match pixel {
             Pixel::Three => (pallete >> 6) & 0x3,
             Pixel::Two => (pallete >> 4) & 0x3,
             Pixel::One => (pallete >> 2) & 0x3,
-            Pixel::Zero => {
-                if transparent {
-                    0
-                } else {
-                    (pallete >> 0) & 0x3
-                }
-            }
-        };
-        //let color = Color::from(Pixel::from(bits as u8));
-        let gray_value = (Pixel::from(bits as u8)).rgb_value();
-
-        (gray_value, gray_value, gray_value)
-    }
-
-    fn decode_pixel(&self, pixel: Pixel, pallete: u8, transparent: bool) -> Pixel {
-        let bits = match pixel {
-            Pixel::Three => (pallete >> 6) & 0x3,
-            Pixel::Two => (pallete >> 4) & 0x3,
-            Pixel::One => (pallete >> 2) & 0x3,
-            Pixel::Zero => {
-                if transparent {
-                    0
-                } else {
-                    (pallete >> 0) & 0x3
-                }
-            }
+            Pixel::Zero => (pallete >> 0) & 0x3,
         };
         let pixel = Pixel::from(bits as u8);
 
         pixel
     }
 
+    fn apply_pixel_pallete_sprite(&self, pixel: Pixel, pallete: &u8) -> Option<Pixel> {
+        let bits = match pixel {
+            Pixel::Three => (pallete >> 6) & 0x3,
+            Pixel::Two => (pallete >> 4) & 0x3,
+            Pixel::One => (pallete >> 2) & 0x3,
+            Pixel::Zero => return None,
+        };
+        let pixel = Pixel::from(bits as u8);
+
+        Some(pixel)
+    }
+
+    // Used in frontend-imgui to display OAM sprites
     pub fn tile_to_vec(tile: &Tile) -> Vec<u8> {
         let mut vec: Vec<u8> = Vec::with_capacity(64 * 4);
         for row in tile {
