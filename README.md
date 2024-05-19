@@ -30,15 +30,15 @@
     <li>
       <a href="#about-the-project">About The Project</a>
       <ul>
-        <lu><a href="#features">Features</a></lu>
-        <lu><a href="#tests-passed">Tests Passed</a></lu>
-        <lu><a href="#demos">Demos</a></lu>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#tests-passed">Tests Passed</a></li>
+        <li><a href="#demos">Demos</a></li>
       </ul>
     </li>
     <li>
       <a href="#getting-started">Getting Started</a>
       <ul>
-        <lu><a href="#keymapping">Keymapping</a></lu>
+        <li><a href="#keymapping">Keymapping</a></li>
         <li><a href="#prerequisites">Prerequisites</a></li>
         <li><a href="#installation">Installation</a></li>
       </ul>
