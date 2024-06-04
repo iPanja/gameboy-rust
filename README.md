@@ -80,7 +80,7 @@ Screen capture of main display:
 ![Super Mario Land](readme_media/SuperMarioLand.gif)
 ![Kirby's Dream Land](readme_media/KirbysDreamLand.gif)
 
-frontend-imgui:
+debugger (frontend-imgui):
 
 [![Game Boy Emulator & Debugger][product-screenshot]](https://github.com/iPanja/gameboy-rust)
 
