@@ -1,8 +1,10 @@
 use std::slice::Iter;
 
+use serde::{Deserialize, Serialize};
+
 use super::Interrupt;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum JoypadInputKey {
     Start,
     Select,

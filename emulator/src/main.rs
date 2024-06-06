@@ -122,17 +122,13 @@ fn main() -> Result<(), Error> {
                             if let Some((joypad_key, index)) = framework.gui.binding_tuple {
                                 println!("binding!");
                                 // Actively awaiting key press for binding
-                                let joypad_bindings = framework
-                                    .gui
-                                    .gameboy_config
-                                    .input_mapper
-                                    .get_mut(&joypad_key);
+                                let joypad_bindings =
+                                    gameboy_state.config.input_mapper.get_mut(&joypad_key);
 
                                 if let Some(joypad_bindings) = joypad_bindings {
                                     joypad_bindings[index] = Some(new_virtual_key);
                                 }
 
-                                framework.gui.is_dirty = true;
                                 framework.gui.binding_tuple = None;
                             }
                         }
@@ -146,7 +142,7 @@ fn main() -> Result<(), Error> {
                 gameboy_state.draw(pixels.frame_mut());
 
                 // Prepare egui
-                framework.prepare(&window);
+                framework.prepare(&window, &mut gameboy_state);
 
                 // Render everything together
                 let render_result = pixels.render_with(|encoder, render_target, context| {
@@ -173,11 +169,6 @@ fn main() -> Result<(), Error> {
                 last_frame = Instant::now();
             }
             _ => {
-                // Potentially check for config updates?
-                if framework.gui.is_dirty {
-                    gameboy_state.update_config(&framework.gui.gameboy_config);
-                    framework.gui.is_dirty = false;
-                }
                 window.request_redraw();
             }
         }
@@ -196,7 +187,7 @@ impl GameBoyState {
     fn new() -> Self {
         let mut gbs = Self {
             gameboy: GameBoy::new(),
-            config: GameBoyConfig::default(),
+            config: GameBoyConfig::load(),
         };
 
         gbs.gameboy
@@ -209,19 +200,6 @@ impl GameBoyState {
 
     fn reset(&mut self) {
         self.gameboy = GameBoy::new();
-    }
-
-    fn update_config(&mut self, new_config: &GameBoyConfig) {
-        // Load ROM
-        if new_config.selected_rom != self.config.selected_rom {
-            if let Some(path_buf) = &new_config.selected_rom {
-                self.reset();
-                self.load_rom(path_buf);
-            }
-        }
-
-        // Copy entire config over
-        self.config = new_config.clone();
     }
 
     fn read_rom_into_buffer(rom_name: &str) -> Vec<u8> {
@@ -267,17 +245,6 @@ impl GameBoyState {
                 }
             }
         }
-
-        /*
-        for (keyboard_code, joypad_key) in self.config.input_mapper.iter() {
-            if input.key_pressed(*keyboard_code) {
-                //println!("  PRESS: {:?}", keyboard_code);
-                self.gameboy.bus.joypad.press_key(*joypad_key);
-            } else if input.key_released(*keyboard_code) {
-                self.gameboy.bus.joypad.unpress_key(*joypad_key);
-                //println!("UNPRESS: {:?}", keyboard_code);
-            }
-        }*/
     }
 
     /// Draw the Gameboy state to the frame buffer.

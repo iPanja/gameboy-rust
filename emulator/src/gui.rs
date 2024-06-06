@@ -1,4 +1,6 @@
+use std::fmt;
 use std::path::PathBuf;
+use std::slice::Iter;
 
 use egui::{ClippedPrimitive, Context, TexturesDelta};
 use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
@@ -10,6 +12,36 @@ use winit::window::Window;
 
 use crate::config::GameBoyConfig;
 use crate::gameboy::joypad::JoypadInputKey;
+use crate::GameBoyState;
+
+// Settings Window Tabs/States
+#[derive(PartialEq, Copy, Clone)]
+enum SettingsTabEnum {
+    Keybinds,
+    ColorPalette,
+    SaveStates,
+}
+
+impl SettingsTabEnum {
+    pub fn iter() -> Iter<'static, SettingsTabEnum> {
+        static TABS: [SettingsTabEnum; 3] = [
+            SettingsTabEnum::Keybinds,
+            SettingsTabEnum::ColorPalette,
+            SettingsTabEnum::SaveStates,
+        ];
+        TABS.iter()
+    }
+}
+
+impl fmt::Debug for SettingsTabEnum {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            SettingsTabEnum::Keybinds => write!(f, "Keybinds"),
+            SettingsTabEnum::ColorPalette => write!(f, "Color Palette"),
+            SettingsTabEnum::SaveStates => write!(f, "Save Manager"),
+        }
+    }
+}
 
 /// Manages all state required for rendering egui over `Pixels`.
 pub struct Framework {
@@ -30,9 +62,7 @@ pub struct Gui {
     /// Only show the egui window when true.
     about_window_open: bool,
     pub settings_window_open: bool,
-    // Config data
-    pub gameboy_config: GameBoyConfig,
-    pub is_dirty: bool,
+    settings_tab_state: SettingsTabEnum,
     // Key Binding
     pub binding_tuple: Option<(JoypadInputKey, usize)>,
 }
@@ -89,12 +119,12 @@ impl Framework {
     }
 
     /// Prepare egui.
-    pub(crate) fn prepare(&mut self, window: &Window) {
+    pub(crate) fn prepare(&mut self, window: &Window, gameboy_state: &mut GameBoyState) {
         // Run the egui frame and create all paint jobs to prepare for rendering.
         let raw_input = self.egui_state.take_egui_input(window);
         let output = self.egui_ctx.run(raw_input, |egui_ctx| {
             // Draw the demo application.
-            self.gui.ui(egui_ctx);
+            self.gui.ui(egui_ctx, gameboy_state);
         });
 
         self.textures.append(output.textures_delta);
@@ -156,14 +186,13 @@ impl Gui {
         Self {
             about_window_open: false,
             settings_window_open: false,
-            gameboy_config: GameBoyConfig::default(),
-            is_dirty: false,
             binding_tuple: None,
+            settings_tab_state: SettingsTabEnum::Keybinds,
         }
     }
 
     /// Create the UI using egui.
-    fn ui(&mut self, ctx: &Context) {
+    fn ui(&mut self, ctx: &Context, gameboy_state: &mut GameBoyState) {
         egui::TopBottomPanel::top("menubar_container").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -180,10 +209,11 @@ impl Gui {
                         if let Some(file_path) = file_path {
                             if file_path.is_file() {
                                 // probably redundant?
-                                self.gameboy_config.selected_rom = Some(file_path);
-                                self.is_dirty = true;
+                                gameboy_state.load_rom(&file_path);
                             }
                         }
+
+                        ui.close_menu();
                     }
                     ui.separator();
                     if ui.button("Settings...").clicked() {
@@ -214,46 +244,78 @@ impl Gui {
         egui::Window::new("Emulator Settings")
             .open(&mut self.settings_window_open)
             .show(ctx, |ui| {
-                ui.label("Joypad Mapping");
+                ui.horizontal(|ui| {
+                    for tab in SettingsTabEnum::iter() {
+                        ui.selectable_value(
+                            &mut self.settings_tab_state,
+                            *tab,
+                            format!("{:?}", *tab),
+                        );
+                    }
+                });
                 ui.separator();
 
-                egui::Grid::new("some_unique_id").show(ui, |ui| {
-                    // Header row
-                    {
-                        ui.label(egui::RichText::new("Joypad Key").strong());
-                        ui.label(egui::RichText::new("Primary Bind").strong());
-                        ui.label(egui::RichText::new("Secondary Bind").strong());
-                        ui.end_row();
-                    }
-
-                    // Rest of grid/table
-                    for (joypad_key, virtual_keys) in self.gameboy_config.input_mapper.iter_mut() {
-                        ui.label(format!("{:?}", joypad_key));
-
-                        for (i, virtual_key) in virtual_keys.iter_mut().enumerate() {
-                            // Determine what text to display for each potential binding
-                            let mut text = format!("-");
-
-                            if let Some(_vk) = virtual_key {
-                                text = format!("{:?}", _vk)
+                match self.settings_tab_state {
+                    SettingsTabEnum::Keybinds => {
+                        egui::Grid::new("keybind_grid").show(ui, |ui| {
+                            // Header row
+                            {
+                                ui.label(egui::RichText::new("Joypad Key").strong());
+                                ui.label(egui::RichText::new("Primary Bind").strong());
+                                ui.label(egui::RichText::new("Secondary Bind").strong());
+                                ui.end_row();
                             }
 
-                            if let Some((_jk, _i)) = self.binding_tuple {
-                                if joypad_key.eq(&_jk) && _i == i {
-                                    text = format!("-- Press any key --");
+                            // Keybinds
+                            for (joypad_key, virtual_keys) in
+                                gameboy_state.config.input_mapper.iter_mut()
+                            {
+                                ui.label(format!("{:?}", joypad_key));
+
+                                for (i, virtual_key) in virtual_keys.iter_mut().enumerate() {
+                                    // Determine what text to display for each potential binding
+                                    // Default: unbound
+                                    let mut text = format!("-");
+
+                                    // Normal label
+                                    if let Some(_vk) = virtual_key {
+                                        text = format!("{:?}", _vk)
+                                    }
+
+                                    // Actively binding
+                                    if let Some((_jk, _i)) = self.binding_tuple {
+                                        if joypad_key.eq(&_jk) && _i == i {
+                                            text = format!("-- Press any key --");
+                                        }
+                                    }
+
+                                    // Display button
+                                    let response = ui.button(text);
+                                    if response.clicked() {
+                                        self.binding_tuple = Some((*joypad_key, i));
+                                    } else if response.secondary_clicked() {
+                                        *virtual_key = None;
+                                    }
                                 }
-                            }
 
-                            // Display button
-                            let response = ui.button(text);
-                            if response.clicked() {
-                                self.binding_tuple = Some((*joypad_key, i));
-                            } else if response.secondary_clicked() {
-                                *virtual_key = None;
+                                ui.end_row();
                             }
-                        }
+                        });
+                    }
+                    SettingsTabEnum::ColorPalette => {
+                        ui.label("Color Palette Settings");
+                        ui.separator();
+                    }
+                    SettingsTabEnum::SaveStates => {
+                        ui.label("Save Manager");
+                        ui.separator();
+                    }
+                }
 
-                        ui.end_row();
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        gameboy_state.config.save();
                     }
                 });
             });
