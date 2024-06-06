@@ -1,5 +1,3 @@
-use crate::{DEBUGGER_SCREEN_HEIGHT, SCREEN_HEIGHT, SCREEN_WIDTH};
-
 use super::{joypad::JoypadInputKey, ppu::Pixel, Bus, CartridgeHeader, CPU, PPU};
 
 pub struct GameBoy {

@@ -1,11 +1,18 @@
+use std::path::PathBuf;
+
 use egui::{ClippedPrimitive, Context, TexturesDelta};
 use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
 use pixels::{wgpu, PixelsContext};
+use rfd::FileDialog;
+use winit::event::VirtualKeyCode;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
 
+use crate::config::GameBoyConfig;
+use crate::gameboy::joypad::JoypadInputKey;
+
 /// Manages all state required for rendering egui over `Pixels`.
-pub(crate) struct Framework {
+pub struct Framework {
     // State for egui.
     egui_ctx: Context,
     egui_state: egui_winit::State,
@@ -15,13 +22,19 @@ pub(crate) struct Framework {
     textures: TexturesDelta,
 
     // State for the GUI
-    gui: Gui,
+    pub gui: Gui,
 }
 
 /// Example application state. A real application will need a lot more state than this.
-struct Gui {
+pub struct Gui {
     /// Only show the egui window when true.
-    window_open: bool,
+    about_window_open: bool,
+    pub settings_window_open: bool,
+    // Config data
+    pub gameboy_config: GameBoyConfig,
+    pub is_dirty: bool,
+    // Key Binding
+    pub binding_tuple: Option<(JoypadInputKey, usize)>,
 }
 
 impl Framework {
@@ -140,7 +153,13 @@ impl Framework {
 impl Gui {
     /// Create a `Gui`.
     fn new() -> Self {
-        Self { window_open: true }
+        Self {
+            about_window_open: false,
+            settings_window_open: false,
+            gameboy_config: GameBoyConfig::default(),
+            is_dirty: false,
+            binding_tuple: None,
+        }
     }
 
     /// Create the UI using egui.
@@ -149,28 +168,94 @@ impl Gui {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("About...").clicked() {
-                        self.window_open = true;
+                        self.about_window_open = true;
+                        ui.close_menu();
+                    }
+                    if ui.button("Load ROM").clicked() {
+                        let file_path: Option<std::path::PathBuf> = FileDialog::new()
+                            .add_filter("ROMs", &["gb", "rom", "bin"])
+                            .add_filter("Anything", &["*"])
+                            .pick_file();
+
+                        if let Some(file_path) = file_path {
+                            if file_path.is_file() {
+                                // probably redundant?
+                                self.gameboy_config.selected_rom = Some(file_path);
+                                self.is_dirty = true;
+                            }
+                        }
+                    }
+                    ui.separator();
+                    if ui.button("Settings...").clicked() {
+                        self.settings_window_open = true;
                         ui.close_menu();
                     }
                 })
             });
         });
 
-        /*
-        egui::Window::new("Hello, egui!")
-            .open(&mut self.window_open)
+        // About Window
+        egui::Window::new("GameBoy Emulator!")
+            .open(&mut self.about_window_open)
             .show(ctx, |ui| {
-                ui.label("This example demonstrates using egui with pixels.");
-                ui.label("Made with 💖 in San Francisco!");
+                ui.label("GameBoy Emulator, written in Rust");
+                ui.label("Version: 1.0.0");
 
                 ui.separator();
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x /= 2.0;
-                    ui.label("Learn more about egui at");
-                    ui.hyperlink("https://docs.rs/egui");
+                    ui.label("Visit the github repository: ");
+                    ui.hyperlink("https://github.com/iPanja/gameboy-rust");
                 });
             });
-        */
+
+        // Settings Window
+        egui::Window::new("Emulator Settings")
+            .open(&mut self.settings_window_open)
+            .show(ctx, |ui| {
+                ui.label("Joypad Mapping");
+                ui.separator();
+
+                egui::Grid::new("some_unique_id").show(ui, |ui| {
+                    // Header row
+                    {
+                        ui.label(egui::RichText::new("Joypad Key").strong());
+                        ui.label(egui::RichText::new("Primary Bind").strong());
+                        ui.label(egui::RichText::new("Secondary Bind").strong());
+                        ui.end_row();
+                    }
+
+                    // Rest of grid/table
+                    for (joypad_key, virtual_keys) in self.gameboy_config.input_mapper.iter_mut() {
+                        ui.label(format!("{:?}", joypad_key));
+
+                        for (i, virtual_key) in virtual_keys.iter_mut().enumerate() {
+                            // Determine what text to display for each potential binding
+                            let mut text = format!("-");
+
+                            if let Some(_vk) = virtual_key {
+                                text = format!("{:?}", _vk)
+                            }
+
+                            if let Some((_jk, _i)) = self.binding_tuple {
+                                if joypad_key.eq(&_jk) && _i == i {
+                                    text = format!("-- Press any key --");
+                                }
+                            }
+
+                            // Display button
+                            let response = ui.button(text);
+                            if response.clicked() {
+                                self.binding_tuple = Some((*joypad_key, i));
+                            } else if response.secondary_clicked() {
+                                *virtual_key = None;
+                            }
+                        }
+
+                        ui.end_row();
+                    }
+                });
+            });
     }
 }

@@ -3,10 +3,12 @@
 
 use std::collections::HashMap;
 use std::io::Read;
+use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::gui::Framework;
+use config::GameBoyConfig;
 use error_iter::ErrorIter as _;
 use gameboy::joypad::JoypadInputKey;
 use gameboy::{GameBoy, Joypad};
@@ -18,14 +20,14 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
 
+mod config;
 mod gameboy;
 mod gui;
 
 const SCALE: u32 = 4;
 const SCREEN_WIDTH: usize = 160;
 const SCREEN_HEIGHT: usize = 144;
-const DEBUGGER_SCREEN_WIDTH: usize = 16 * 8;
-const DEBUGGER_SCREEN_HEIGHT: usize = 32 * 8;
+
 const WINDOW_WIDTH: u32 = (SCREEN_WIDTH as u32) * SCALE;
 const WINDOW_HEIGHT: u32 = (SCREEN_HEIGHT as u32) * SCALE;
 const CYCLES_PER_FRAME: f64 = (4194304 / 60) as f64;
@@ -33,21 +35,10 @@ const CYCLES_PER_FRAME: f64 = (4194304 / 60) as f64;
 /// Representation of the application state. In this example, a box will bounce around the screen.
 struct GameBoyState {
     gameboy: GameBoy,
-    breakpoints: Vec<u16>,
+    config: GameBoyConfig,
 }
 
 fn main() -> Result<(), Error> {
-    let input_mapper: HashMap<VirtualKeyCode, JoypadInputKey> = HashMap::from([
-        (VirtualKeyCode::W, JoypadInputKey::Up),
-        (VirtualKeyCode::A, JoypadInputKey::Left),
-        (VirtualKeyCode::S, JoypadInputKey::Down),
-        (VirtualKeyCode::D, JoypadInputKey::Right),
-        (VirtualKeyCode::Q, JoypadInputKey::A),
-        (VirtualKeyCode::E, JoypadInputKey::B),
-        (VirtualKeyCode::Right, JoypadInputKey::Start),
-        (VirtualKeyCode::Left, JoypadInputKey::Select),
-    ]);
-
     env_logger::init();
     let event_loop = EventLoop::new();
     let mut input = WinitInputHelper::new();
@@ -90,8 +81,10 @@ fn main() -> Result<(), Error> {
                 return;
             }
 
-            // Read joypad input
-            gameboy_state.update_joypad_state(&input, &input_mapper);
+            // Read joypad input (if not in the keybinding settings page)
+            if !framework.gui.settings_window_open {
+                gameboy_state.update_joypad_state(&input);
+            }
 
             // Update the scale factor
             if let Some(scale_factor) = input.scale_factor() {
@@ -119,6 +112,33 @@ fn main() -> Result<(), Error> {
             Event::WindowEvent { event, .. } => {
                 // Update egui inputs
                 framework.handle_event(&event);
+                match event {
+                    WindowEvent::KeyboardInput {
+                        device_id,
+                        input,
+                        is_synthetic,
+                    } => {
+                        if let Some(new_virtual_key) = input.virtual_keycode {
+                            if let Some((joypad_key, index)) = framework.gui.binding_tuple {
+                                println!("binding!");
+                                // Actively awaiting key press for binding
+                                let joypad_bindings = framework
+                                    .gui
+                                    .gameboy_config
+                                    .input_mapper
+                                    .get_mut(&joypad_key);
+
+                                if let Some(joypad_bindings) = joypad_bindings {
+                                    joypad_bindings[index] = Some(new_virtual_key);
+                                }
+
+                                framework.gui.is_dirty = true;
+                                framework.gui.binding_tuple = None;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
             // Draw the current frame
             Event::RedrawRequested(_) => {
@@ -145,13 +165,20 @@ fn main() -> Result<(), Error> {
                     *control_flow = ControlFlow::Exit;
                 }
             }
+            Event::NewEvents(winit::event::StartCause::ResumeTimeReached {
+                start,
+                requested_resume,
+            }) => {
+                gameboy_state.update();
+                last_frame = Instant::now();
+            }
             _ => {
-                if last_frame < Instant::now() {
-                    // Process frame
-                    last_frame = Instant::now() + frame_duration;
-                    gameboy_state.update();
-                    window.request_redraw();
+                // Potentially check for config updates?
+                if framework.gui.is_dirty {
+                    gameboy_state.update_config(&framework.gui.gameboy_config);
+                    framework.gui.is_dirty = false;
                 }
+                window.request_redraw();
             }
         }
     });
@@ -169,15 +196,32 @@ impl GameBoyState {
     fn new() -> Self {
         let mut gbs = Self {
             gameboy: GameBoy::new(),
-            breakpoints: Vec::new(),
+            config: GameBoyConfig::default(),
         };
 
         gbs.gameboy
             .read_boot_rom(&GameBoyState::read_rom_into_buffer("DMG_ROM.bin"));
         gbs.gameboy
-            .read_rom(&GameBoyState::read_rom_into_buffer("Tetris.gb"));
+            .read_rom(&GameBoyState::read_rom_into_buffer("Kirby.gb"));
 
         gbs
+    }
+
+    fn reset(&mut self) {
+        self.gameboy = GameBoy::new();
+    }
+
+    fn update_config(&mut self, new_config: &GameBoyConfig) {
+        // Load ROM
+        if new_config.selected_rom != self.config.selected_rom {
+            if let Some(path_buf) = &new_config.selected_rom {
+                self.reset();
+                self.load_rom(path_buf);
+            }
+        }
+
+        // Copy entire config over
+        self.config = new_config.clone();
     }
 
     fn read_rom_into_buffer(rom_name: &str) -> Vec<u8> {
@@ -189,6 +233,20 @@ impl GameBoyState {
         buffer
     }
 
+    fn read_rom_from_file_path(path_buf: &PathBuf) -> Vec<u8> {
+        let mut buffer: Vec<u8> = Vec::new();
+        if let Some(file_path) = path_buf.to_str() {
+            let mut rom = std::fs::File::open(file_path).expect("INVALID ROM");
+            rom.read_to_end(&mut buffer).unwrap();
+        }
+        buffer
+    }
+
+    fn load_rom(&mut self, path_buf: &PathBuf) {
+        self.gameboy
+            .read_rom(&GameBoyState::read_rom_from_file_path(&path_buf));
+    }
+
     /// Update the Gameboy internal state; process a frame worth of cycles
     fn update(&mut self) {
         let mut cycles: f64 = 0.0;
@@ -197,12 +255,21 @@ impl GameBoyState {
         }
     }
 
-    fn update_joypad_state(
-        &mut self,
-        input: &WinitInputHelper,
-        input_mapper: &HashMap<VirtualKeyCode, JoypadInputKey>,
-    ) {
-        for (keyboard_code, joypad_key) in input_mapper.iter() {
+    fn update_joypad_state(&mut self, input: &WinitInputHelper) {
+        for (joypad_key, keyboard_codes) in self.config.input_mapper.iter() {
+            for keyboard_code in keyboard_codes.iter() {
+                if let Some(keyboard_code) = keyboard_code {
+                    if input.key_pressed(*keyboard_code) {
+                        self.gameboy.bus.joypad.press_key(*joypad_key);
+                    } else if input.key_released(*keyboard_code) {
+                        self.gameboy.bus.joypad.unpress_key(*joypad_key);
+                    }
+                }
+            }
+        }
+
+        /*
+        for (keyboard_code, joypad_key) in self.config.input_mapper.iter() {
             if input.key_pressed(*keyboard_code) {
                 //println!("  PRESS: {:?}", keyboard_code);
                 self.gameboy.bus.joypad.press_key(*joypad_key);
@@ -210,7 +277,7 @@ impl GameBoyState {
                 self.gameboy.bus.joypad.unpress_key(*joypad_key);
                 //println!("UNPRESS: {:?}", keyboard_code);
             }
-        }
+        }*/
     }
 
     /// Draw the Gameboy state to the frame buffer.

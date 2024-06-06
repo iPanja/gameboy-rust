@@ -1,6 +1,8 @@
+use std::slice::Iter;
+
 use super::Interrupt;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum JoypadInputKey {
     Start,
     Select,
@@ -13,6 +15,20 @@ pub enum JoypadInputKey {
 }
 
 impl JoypadInputKey {
+    pub fn iter() -> Iter<'static, JoypadInputKey> {
+        static JOYPAD_KEYS: [JoypadInputKey; 8] = [
+            JoypadInputKey::Start,
+            JoypadInputKey::Select,
+            JoypadInputKey::B,
+            JoypadInputKey::A,
+            JoypadInputKey::Down,
+            JoypadInputKey::Up,
+            JoypadInputKey::Left,
+            JoypadInputKey::Right,
+        ];
+        JOYPAD_KEYS.iter()
+    }
+
     pub fn input_byte_pos(&self) -> u8 {
         match self {
             JoypadInputKey::Start => 0b1000_0000,
