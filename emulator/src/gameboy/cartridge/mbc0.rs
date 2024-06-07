@@ -1,22 +1,22 @@
+use serde_big_array::BigArray;
+
 use super::MBC;
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct MBC0 {
+    #[serde(with = "BigArray")]
     rom: [u8; 0x7FFF + 1],
-    //ram: [u8; 0xBFFF - 0xA000],
-
-    //is_ram_enabled: bool,
 }
 
 impl MBC0 {
     pub fn new() -> Self {
         MBC0 {
             rom: [0; 0x7FFF + 1],
-            //ram: [0; 0xBFFF - 0xA000],
-            //is_ram_enabled: false,
         }
     }
 }
 
+#[typetag::serde]
 impl MBC for MBC0 {
     fn read_byte(&self, addr: u16) -> u8 {
         match addr {

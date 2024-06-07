@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::slice::Iter;
 
+use chrono::{DateTime, Local};
 use egui::{ClippedPrimitive, Context, TexturesDelta};
 use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
 use pixels::{wgpu, PixelsContext};
@@ -12,6 +13,7 @@ use winit::window::Window;
 
 use crate::config::GameBoyConfig;
 use crate::gameboy::joypad::JoypadInputKey;
+use crate::snapshot::GameBoyGameSave;
 use crate::GameBoyState;
 
 // Settings Window Tabs/States
@@ -62,6 +64,7 @@ pub struct Gui {
     /// Only show the egui window when true.
     about_window_open: bool,
     pub settings_window_open: bool,
+    debug_window_open: bool,
     settings_tab_state: SettingsTabEnum,
     // Key Binding
     pub binding_tuple: Option<(JoypadInputKey, usize)>,
@@ -186,6 +189,7 @@ impl Gui {
         Self {
             about_window_open: false,
             settings_window_open: false,
+            debug_window_open: false,
             binding_tuple: None,
             settings_tab_state: SettingsTabEnum::Keybinds,
         }
@@ -209,6 +213,7 @@ impl Gui {
                         if let Some(file_path) = file_path {
                             if file_path.is_file() {
                                 // probably redundant?
+                                gameboy_state.reset();
                                 gameboy_state.load_rom(&file_path);
                             }
                         }
@@ -220,7 +225,14 @@ impl Gui {
                         self.settings_window_open = true;
                         ui.close_menu();
                     }
-                })
+                });
+
+                ui.menu_button("Debug", |ui| {
+                    if ui.button("Show debug window").clicked() {
+                        self.debug_window_open = true;
+                        ui.close_menu();
+                    }
+                });
             });
         });
 
@@ -307,17 +319,59 @@ impl Gui {
                         ui.separator();
                     }
                     SettingsTabEnum::SaveStates => {
-                        ui.label("Save Manager");
+                        ui.horizontal(|ui| {
+                            ui.label("Save Manager");
+                            ui.separator();
+
+                            // Save current state
+                            if ui.button("Save State").clicked() {
+                                GameBoyGameSave::default().save(&gameboy_state.gameboy);
+                            }
+
+                            // Load (default/last) state
+                            if ui.button("Load State...").clicked() {
+                                GameBoyGameSave::default().load(&mut gameboy_state.gameboy);
+                            }
+                        });
                         ui.separator();
+                        ui.label("Recent saves:");
+                        egui::Grid::new("keybind_grid").show(ui, |ui| {
+                            // Saves
+                            ui.horizontal(|ui| {
+                                ui.button("▶");
+                                ui.label("Save 1 - 6/6/2024 9:04PM");
+                            });
+                        });
                     }
                 }
 
                 ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
+                    if ui.button("Save Config").clicked() {
                         gameboy_state.config.save();
                     }
                 });
+            });
+
+        // Debug Window
+        egui::Window::new("Debug")
+            .open(&mut self.debug_window_open)
+            .show(ctx, |ui| {
+                ui.label("Version: 1.0.0");
+
+                ui.separator();
+                ui.label("[Cartridge Header]");
+                if let Some(c_h) = &gameboy_state.gameboy.cartridge_header {
+                    ui.label(format!("Cartridge Game Title: {:?}", c_h.title));
+                    ui.label(format!(
+                        "Cartridge Type Code: {:#X}",
+                        c_h.cartridge_type_code
+                    ));
+                    ui.label(format!("Cartridge ROM Code: {:#X}", c_h.rom_size_code));
+                    ui.label(format!("Cartridge RAM Code: {:#X}", c_h.ram_size_code));
+                } else {
+                    ui.label("Cartridge Game Title: N/A");
+                }
             });
     }
 }

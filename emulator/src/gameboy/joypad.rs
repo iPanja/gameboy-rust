@@ -45,8 +45,7 @@ impl JoypadInputKey {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
-
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Joypad {
     pub input_byte: u8,     // Start | Select | B | A | Down | Up | Left | Right
     pub selection_mask: u8, // 2 bits

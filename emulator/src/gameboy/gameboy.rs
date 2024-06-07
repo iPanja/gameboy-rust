@@ -1,10 +1,12 @@
 use super::{joypad::JoypadInputKey, ppu::Pixel, Bus, CartridgeHeader, CPU, PPU};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct GameBoy {
     pub cpu: CPU,
     pub bus: Box<Bus>,
     pub cartridge_header: Option<CartridgeHeader>,
-    tile_map_screen: [[Pixel; 16 * 8]; 32 * 8],
+    //tile_map_screen: [[Pixel; 16 * 8]; 32 * 8],
 }
 
 impl GameBoy {
@@ -13,7 +15,7 @@ impl GameBoy {
             cpu: CPU::new(),
             bus: Box::new(Bus::new()),
             cartridge_header: None,
-            tile_map_screen: [[Pixel::Zero; 128]; 256],
+            //tile_map_screen: [[Pixel::Zero; 128]; 256],
         }
     }
 
@@ -72,8 +74,12 @@ impl GameBoy {
 
         if let Some(c_h) = &self.cartridge_header {
             match c_h.cartridge_type_code {
-                0x01 => self.bus.mbc = Box::new(super::cartridge::MBC1::new(c_h)),
-                _ => self.bus.mbc = Box::new(super::cartridge::MBC0::new()),
+                0x00 => self.bus.mbc = Box::new(super::cartridge::MBC0::new()),
+                0x01 | 0x02 | 0x03 => self.bus.mbc = Box::new(super::cartridge::MBC1::new(c_h)),
+                _ => {
+                    panic!("Unsupported cartridge!\n\t{:#X}\n", c_h.cartridge_type_code);
+                    //self.bus.mbc = Box::new(super::cartridge::MBC0::new())
+                }
             }
         }
 
@@ -94,23 +100,24 @@ impl GameBoy {
 
     pub fn export_tile_map_display(&mut self, buffer: &mut Vec<u8>) {
         // Update internal frame buffer
-        self.bus.ppu.get_debug_display(&mut self.tile_map_screen);
+        let mut tile_map_screen = [[Pixel::Zero; 128]; 256];
+        self.bus.ppu.get_debug_display(&mut tile_map_screen);
 
         // Export as vector
-        self.convert_disply_to_vec(&self.tile_map_screen, buffer);
+        self.convert_disply_to_vec(&tile_map_screen, buffer);
     }
 
     //
     // Display helper methods
     //
 
-    fn get_debug_display(&mut self) -> &[[Pixel; 128]; 256] {
+    /*fn get_debug_display(&mut self) -> &[[Pixel; 128]; 256] {
         //self.bus.ram.ram[0xFF44] = 0x90; //min(self.bus.ram.ram[0xFF40] + 1, 144);
         self.bus.ram_write_byte(0xFF44, 0x90);
         self.bus.ppu.get_debug_display(&mut self.tile_map_screen);
 
         &self.tile_map_screen
-    }
+    }*/
 
     //pub fn convert(&mut self, display: , buffer: &mut Vec<u8>)
     fn convert_disply_to_vec<const W: usize, const H: usize>(

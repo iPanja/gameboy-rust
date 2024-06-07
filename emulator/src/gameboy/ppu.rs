@@ -6,6 +6,9 @@ use std::{
 };
 
 use crate::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use serde::{Deserialize, Serialize};
+//use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde_big_array::BigArray;
 
 use super::{Bus, Interrupt};
 
@@ -13,14 +16,21 @@ const VRAM_SIZE: usize = (0x9FFF - 0x8000) + (0xFE9F - 0xFE00);
 
 const TILE_MAP_SIZE: usize = 0x3FF;
 
+#[derive(Serialize, Deserialize)]
 pub struct PPU {
     // Memory Map (entirety of VRAM) 0x8000-0x9FFF and 0xFE00-0xFE9F
+    #[serde(with = "BigArray")]
     raw_tile_vram: [u8; 384 * 16],
-    pub tile_set: [Tile; 384],   // Tile Set Blocks 0-3 - 0x8000-0x97FF
+    #[serde(with = "BigArray")]
+    pub tile_set: [Tile; 384], // Tile Set Blocks 0-3 - 0x8000-0x97FF
+    #[serde(with = "BigArray")]
     tile_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
+    #[serde(with = "BigArray")]
     tile_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
+    #[serde(with = "BigArray")]
     pub raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
-    pub oam: [Sprite; 40],   // [[u8; 4]; 40]
+    #[serde(with = "BigArray")]
+    pub oam: [Sprite; 40], // [[u8; 4]; 40]
     // IO Registers 0xFF40-0xFF4B
     lcdc: u8,           // PPU control register - 0xFF40
     stat: u8,           // PPU status register - 0xFF41
@@ -39,6 +49,7 @@ pub struct PPU {
     window_lc: u8,
     line_scanned: bool,
     // Display
+    #[serde(with = "BigArray")]
     screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4], // RGBA
 }
 
@@ -72,7 +83,7 @@ impl std::convert::From<u8> for Mode {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)] // Debug
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)] // Debug
 pub enum Pixel {
     Three, // 0b11
     Two,   // 0b10
@@ -121,6 +132,12 @@ impl fmt::Debug for Pixel {
             Pixel::Two => write!(f, "2"),   // Dark Gray
             Pixel::Three => write!(f, "3"), // Black
         }
+    }
+}
+
+impl Default for Pixel {
+    fn default() -> Self {
+        Pixel::Zero
     }
 }
 

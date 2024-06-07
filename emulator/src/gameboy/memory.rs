@@ -1,6 +1,10 @@
 const RAM_SIZE: usize = 65536;
 
+use serde_big_array::BigArray;
+
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Memory {
+    #[serde(with = "BigArray")]
     pub ram: [u8; RAM_SIZE], // 0x0000 to 0xFFFF
 }
 

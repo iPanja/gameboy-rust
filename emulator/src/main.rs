@@ -23,6 +23,7 @@ use winit_input_helper::WinitInputHelper;
 mod config;
 mod gameboy;
 mod gui;
+mod snapshot;
 
 const SCALE: u32 = 4;
 const SCREEN_WIDTH: usize = 160;
@@ -34,11 +35,14 @@ const CYCLES_PER_FRAME: f64 = (4194304 / 60) as f64;
 
 /// Representation of the application state. In this example, a box will bounce around the screen.
 struct GameBoyState {
-    gameboy: GameBoy,
+    gameboy: Box<GameBoy>,
     config: GameBoyConfig,
 }
 
 fn main() -> Result<(), Error> {
+    std::env::set_var("RUST_MIN_STACK", format!("{:?}", 100 * 1024 * 1024));
+    std::env::set_var("RUST_BACKTRACE", "1");
+
     env_logger::init();
     let event_loop = EventLoop::new();
     let mut input = WinitInputHelper::new();
@@ -186,7 +190,7 @@ impl GameBoyState {
     /// Create a new `World` instance that can draw a moving box.
     fn new() -> Self {
         let mut gbs = Self {
-            gameboy: GameBoy::new(),
+            gameboy: Box::new(GameBoy::new()),
             config: GameBoyConfig::load(),
         };
 
@@ -195,11 +199,12 @@ impl GameBoyState {
         gbs.gameboy
             .read_rom(&GameBoyState::read_rom_into_buffer("Kirby.gb"));
 
+        //GameBoySnapshot::load(&mut gbs.gameboy);
         gbs
     }
 
     fn reset(&mut self) {
-        self.gameboy = GameBoy::new();
+        self.gameboy = Box::new(GameBoy::new());
     }
 
     fn read_rom_into_buffer(rom_name: &str) -> Vec<u8> {

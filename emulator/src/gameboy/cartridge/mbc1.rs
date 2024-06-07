@@ -1,4 +1,5 @@
 use super::{CartridgeHeader, MBC};
+use serde_big_array::BigArray;
 
 const ROM_BANK_COUNT: usize = 128;
 const ROM_BANK_SIZE: usize = 0x4000;
@@ -8,8 +9,10 @@ const RAM_BANK_COUNT: usize = 4;
 const RAM_BANK_SIZE: usize = 0x2000;
 const RAM_SIZE: usize = RAM_BANK_COUNT * RAM_BANK_SIZE;
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct MBC1 {
     rom: Vec<u8>,
+    #[serde(with = "BigArray")]
     ram: [u8; RAM_SIZE],
     is_ram_enabled: bool,
 
@@ -49,6 +52,7 @@ impl MBC1 {
     }
 }
 
+#[typetag::serde]
 impl MBC for MBC1 {
     fn read_byte(&self, addr: u16) -> u8 {
         match addr {

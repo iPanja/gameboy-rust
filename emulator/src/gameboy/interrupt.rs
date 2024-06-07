@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Interrupt {
     VBlank,
     LCD,

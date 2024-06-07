@@ -2,6 +2,7 @@ use super::{Bus, Interrupt};
 
 const CPU_CLOCK: f64 = 4194304f64; // Random value, fix this
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Timer {
     // External Memory Mapped
     div: u8, // Divider register - 0xFF04  |   These are the upper 8 bits that compose the internal div

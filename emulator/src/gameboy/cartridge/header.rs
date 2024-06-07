@@ -1,6 +1,7 @@
 const CARTRIDGE_HEADER_SIZE: usize = 0x014F - 0x0100;
 const HEADER_START: usize = 0x0100;
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct CartridgeHeader {
     pub title: String,
     pub cartridge_type_code: u8,

@@ -10,6 +10,7 @@ const IF_REG: u16 = 0xFF0F;
 const IE_REG: u16 = 0xFFFF;
 pub const IS_DEBUGGING: bool = false;
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct CPU {
     pub registers: Registers,
     is_halted: bool,

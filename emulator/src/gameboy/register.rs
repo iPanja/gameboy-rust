@@ -1,6 +1,7 @@
 use super::FlagsRegister;
 use std::fmt;
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Registers {
     pub a: u8,
     pub b: u8,

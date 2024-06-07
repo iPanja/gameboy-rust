@@ -2,9 +2,11 @@ use super::{
     cartridge::{MBC, MBC0},
     interrupt, Interrupt, Joypad, Memory, Timer, PPU,
 };
+use serde_big_array::BigArray;
 
 const BOOT_ROM_SIZE: u16 = 0x100;
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Bus {
     ram: Memory,
     pub ppu: PPU,
@@ -13,9 +15,12 @@ pub struct Bus {
     pub mbc: Box<dyn MBC>,
     pub joypad: Joypad,
     is_boot_rom_mapped: bool,
+    #[serde(with = "BigArray")]
     boot_rom: [u8; BOOT_ROM_SIZE as usize],
     dma_address_upper: u8,
+    #[serde(with = "BigArray")]
     wram: [u8; 0x8000],
+    #[serde(with = "BigArray")]
     hram: [u8; 0x7F],
     serial: [u8; 2],
     interrupt_flags: u8,
@@ -88,7 +93,6 @@ impl Bus {
     }
 
     pub fn ram_write_byte(&mut self, address: u16, byte: u8) {
-
         match address {
             0x0000..=0x7FFF => self.mbc.write_byte(address, byte),
 
