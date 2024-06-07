@@ -152,7 +152,7 @@ It also contains a basic GUI ([egui](https://github.com/emilk/egui), [pixels](ht
 
 ### Alternative GUIs
 
-The other two crates, listed below, are alternative GUIs that you may use. If you are looking to just play a game however, just use the default GUI inside of the <a href="#emulator">emulator crate</a>. If you do wish to use one of the options below, simply run `cargo run` in either directory/crate to start!
+The other two crates, listed below, are alternative GUIs that you may use. If you are looking to just play a game however, simply use the default GUI inside of the <a href="#emulator">emulator crate</a>. If you do wish to use one of the options below, simply run `cargo run` in either directory/crate to start!
 
 - **(Recommended)** `frontend-imgui`: Debugger and non-scaling display using a dear-imgui binding, [imgui-rs](https://github.com/imgui-rs/imgui-rs).
 - _(Buggy, do not use)_ `frontend-egui`: Minimalistic, scaling display using the rust crate [egui](https://github.com/emilk/egui).
