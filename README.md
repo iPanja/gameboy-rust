@@ -67,6 +67,7 @@ This is a work-in-progress Game Boy (specifically [DMG-01](https://en.wikipedia.
 - Joypad Input
 - Timer
 - Interrupts
+- Custom Keybinds
 
 ### Tests Passed
 
@@ -80,7 +81,10 @@ Screen capture of main display:
 ![Super Mario Land](readme_media/SuperMarioLand.gif)
 ![Kirby's Dream Land](readme_media/KirbysDreamLand.gif)
 
-debugger (frontend-imgui):
+Default Emulator GUI (emulator crate):
+![Game Boy GUI & Settings Tab](readme_media/Settings.png)
+
+Debugger (frontend-imgui crate):
 
 [![Game Boy Emulator & Debugger][product-screenshot]](https://github.com/iPanja/gameboy-rust)
 
@@ -95,13 +99,13 @@ All you should need to run/debug this locally is [Rust](https://www.rust-lang.or
 ```
 git clone https://github.com/iPanja/gameboy-rust
 # Download a Game Boy ROM online and follow the directions under prerequisites to load it via code
-cd gameboy-rust/frontend-imgui
+cd gameboy-rust/emulator
 cargo run
 ```
 
-### Keymapping
+### Keybinds
 
-Custom keybinds/keymapping is not yet implemented. Currently, this is the setup:
+These are the default keybinds. However, you can modify them freely in the default gui (emulator crate) via `File > Settings`.
 
 | Keyboard Input | Corresponding Joypad Input |
 | -------------- | -------------------------- |
@@ -119,12 +123,6 @@ Custom keybinds/keymapping is not yet implemented. Currently, this is the setup:
 1. Install Rust: https://www.rust-lang.org/tools/install.
 2. Download some Game Boy ROMs to play with!
 
-I recommend creating a `/rom` directory in the root of the project. Regardless, modify the following line (~47) in `frontend-imgui/src/main.rs` to read in the ROM you supplied.
-
-**line ~47:** `let mut rom = std::fs::File::open("../roms/<YOUR ROM></ROM>.gb").expect("INVALID ROM");`
-
-3. Optionally: Download the Game Boy boot ROM: http://www.neviksti.com/DMG/DMG_ROM.bin. Enable it in your choice of frontend.
-
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- USAGE EXAMPLES -->
@@ -139,12 +137,20 @@ There are three separate packages in this repository.
 
 ### Emulator
 
+**Recommended to run this crate (`cargo run`)!**
+
 This houses the core of the Game Boy emulator. Currently, it has all most all of the features you might expect, _except_ sound.
 
-### User Interfaces
+It also contains a basic GUI ([egui](https://github.com/emilk/egui), [pixels](https://github.com/parasyte/pixels)) with features such as:
+
+1. Loading ROMs from your system
+2. Customizing keybinds and saving/restoring them
+3. (WIP) A game save manager
+
+### Alternative GUIs
 
 - **(Recommended)** `frontend-imgui`: Debugger and non-scaling display using a dear-imgui binding, [imgui-rs](https://github.com/imgui-rs/imgui-rs).
-- _(Buggy)_ `frontend-egui`: Minimalistic, scaling display using the rust crate [egui](https://github.com/emilk/egui).
+- _(Buggy, do not use)_ `frontend-egui`: Minimalistic, scaling display using the rust crate [egui](https://github.com/emilk/egui).
 
 Currently there are two separate frontends/user interfaces that actually allow you to run/play the emulator. Simply run `cargo run` in either directory to start!
 
@@ -162,11 +168,12 @@ This project is still a work in progress especially the user interfaces. They re
   - [ ] Implement the MBC(s) needed to play the Pokemon games
   - [ ] Speed changing
   - [ ] Pixel FIFO
+  - [ ] Debug Kirby 2 and Donkey Kong (likely STOP or MBC1 + RAM related)
 - User Interface
-  - [ ] Custom key mapping
-  - [ ] Loading ROMS
+  - [x] Custom key mapping
+  - [x] Loading ROMs from file system
   - [ ] Scaling display in frontend-imgui
-  - [ ] Fix frontend-egui on windows machines
+  - [x] Fix egui on windows machines
   - [ ] Speed changing
 
 See the [open issues](https://github.com/iPanja/gameboy-rust/issues) for a full list of proposed features (and known issues).
