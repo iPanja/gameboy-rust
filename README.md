@@ -82,6 +82,7 @@ Screen capture of main display:
 ![Kirby's Dream Land](readme_media/KirbysDreamLand.gif)
 
 Default Emulator GUI (emulator crate):
+
 ![Game Boy GUI & Settings Tab](readme_media/Settings.png)
 
 Debugger (frontend-imgui crate):
