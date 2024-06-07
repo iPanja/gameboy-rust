@@ -81,7 +81,7 @@ Screen capture of main display:
 ![Super Mario Land](readme_media/SuperMarioLand.gif)
 ![Kirby's Dream Land](readme_media/KirbysDreamLand.gif)
 
-Default Emulator GUI (emulator crate):
+Default emulator GUI (emulator crate):
 
 ![Game Boy GUI & Settings Tab](readme_media/Settings.png)
 
@@ -99,14 +99,16 @@ All you should need to run/debug this locally is [Rust](https://www.rust-lang.or
 
 ```
 git clone https://github.com/iPanja/gameboy-rust
-# Download a Game Boy ROM online and follow the directions under prerequisites to load it via code
 cd gameboy-rust/emulator
 cargo run
+# Download a GameBoy ROM online and load it via File > Load ROM
 ```
 
 ### Keybinds
 
-These are the default keybinds. However, you can modify them freely in the default gui (emulator crate) via `File > Settings`.
+You can modify the default keybinds freely in the emulator crate's gui via `File > Settings`.
+
+#### Default keybinds
 
 | Keyboard Input | Corresponding Joypad Input |
 | -------------- | -------------------------- |
@@ -133,8 +135,8 @@ These are the default keybinds. However, you can modify them freely in the defau
 There are three separate packages in this repository.
 
 - emulator
-- frontend-egui
 - frontend-imgui
+- frontend-egui
 
 ### Emulator
 
@@ -144,18 +146,18 @@ This houses the core of the Game Boy emulator. Currently, it has all most all of
 
 It also contains a basic GUI ([egui](https://github.com/emilk/egui), [pixels](https://github.com/parasyte/pixels)) with features such as:
 
-1. Loading ROMs from your system
+1. Loading ROMs from your file system
 2. Customizing keybinds and saving/restoring them
 3. (WIP) A game save manager
 
 ### Alternative GUIs
 
+The other two crates, listed below, are alternative GUIs that you may use. If you are looking to just play a game however, just use the default GUI inside of the <a href="#emulator">emulator crate</a>. If you do wish to use one of the options below, simply run `cargo run` in either directory/crate to start!
+
 - **(Recommended)** `frontend-imgui`: Debugger and non-scaling display using a dear-imgui binding, [imgui-rs](https://github.com/imgui-rs/imgui-rs).
 - _(Buggy, do not use)_ `frontend-egui`: Minimalistic, scaling display using the rust crate [egui](https://github.com/emilk/egui).
 
-Currently there are two separate frontends/user interfaces that actually allow you to run/play the emulator. Simply run `cargo run` in either directory to start!
-
-This project is still a work in progress especially the user interfaces. They require a lot more polishing and some of these plans are listed in the <a href="#roadmap">roadmap</a></li>.
+This project is still a work in progress, especially the user interfaces. They require a lot more polishing and some of these plans are listed in the <a href="#roadmap">roadmap</a></li>.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -171,11 +173,12 @@ This project is still a work in progress especially the user interfaces. They re
   - [ ] Pixel FIFO
   - [ ] Debug Kirby 2 and Donkey Kong (likely STOP or MBC1 + RAM related)
 - User Interface
+  - [ ] Implement more features in the emulator's GUI
+  - [ ] Scaling display in frontend-imgui
+  - [ ] Speed changing
   - [x] Custom key mapping
   - [x] Loading ROMs from file system
-  - [ ] Scaling display in frontend-imgui
   - [x] Fix egui on windows machines
-  - [ ] Speed changing
 
 See the [open issues](https://github.com/iPanja/gameboy-rust/issues) for a full list of proposed features (and known issues).
 
