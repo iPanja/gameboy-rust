@@ -36,24 +36,48 @@ impl Default for GameBoyConfig {
 
 // Save and Load
 impl GameBoyConfig {
-    pub fn save(&self) {
+    /// Attempt to save the config instance to gb_config.json
+    pub fn save(&self) -> Result<(), String> {
         let mut file = File::create("gb_config.json");
-        if let Ok(mut file) = file {
-            let serialized = serde_json::to_string(&self).unwrap();
-            file.write_all(&serialized.as_bytes());
+
+        match file.as_mut() {
+            Ok(file) => {
+                let serialized = serde_json::to_string(&self).unwrap();
+                match file.write_all(&serialized.as_bytes()) {
+                    Ok(_) => Ok(()),
+                    Err(error) => Err(error.to_string()),
+                }
+            }
+            Err(error) => Err(error.to_string()),
         }
     }
 
-    pub fn load() -> Self {
-        let mut file = File::open("gb_config.json");
-        if let Ok(mut file) = file {
-            let mut serialized = String::new();
-            file.read_to_string(&mut serialized);
+    /// Attempt to load config from gb_config.json.
+    /// Return instance if found, otherwise the error as a string
+    fn _load() -> Result<Self, String> {
+        match File::open("gb_config.json").as_mut() {
+            Ok(file) => {
+                let mut serialized = String::new();
+                match file.read_to_string(&mut serialized) {
+                    Ok(_) => serde_json::from_str(&serialized).unwrap(),
+                    Err(error) => Err(error.to_string()),
+                }
+            }
+            Err(error) => Err(error.to_string()),
+        }
+    }
 
-            serde_json::from_str(&serialized).unwrap()
-        } else {
-            println!("Could not find config save - using a default config");
-            GameBoyConfig::default()
+    /// Return an instance of the saved config at gb_config.json if found, otherwise GameBoyConfig::default()
+    pub fn load() -> Self {
+        match GameBoyConfig::_load() {
+            Ok(config) => config,
+            Err(error) => {
+                println!(
+                    "Failed to grab GameBoy config file, using default layout!\n\t{:?}",
+                    error
+                );
+                GameBoyConfig::default()
+            }
         }
     }
 }

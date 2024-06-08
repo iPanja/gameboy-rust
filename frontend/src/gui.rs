@@ -1,20 +1,13 @@
-use std::fmt;
-use std::path::PathBuf;
-use std::slice::Iter;
-
-use chrono::{DateTime, Local};
+use crate::{snapshot::GameBoyGameSave, GameBoyState};
 use egui::{ClippedPrimitive, Context, TexturesDelta};
 use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
+use emulator::gameboy::joypad::JoypadInputKey;
 use pixels::{wgpu, PixelsContext};
 use rfd::FileDialog;
-use winit::event::VirtualKeyCode;
+use std::fmt;
+use std::slice::Iter;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
-
-use crate::config::GameBoyConfig;
-use crate::gameboy::joypad::JoypadInputKey;
-use crate::snapshot::GameBoyGameSave;
-use crate::GameBoyState;
 
 // Settings Window Tabs/States
 #[derive(PartialEq, Copy, Clone)]
