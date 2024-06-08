@@ -85,7 +85,7 @@ Default emulator GUI (emulator crate):
 
 ![Game Boy GUI & Settings Tab](readme_media/Settings.png)
 
-Debugger (frontend-imgui crate):
+Debugger (debugger crate):
 
 [![Game Boy Emulator & Debugger][product-screenshot]](https://github.com/iPanja/gameboy-rust)
 
@@ -135,7 +135,7 @@ You can modify the default keybinds freely in the emulator crate's gui via `File
 There are three separate packages in this repository.
 
 - emulator
-- frontend-imgui
+- debugger
 - frontend-egui
 
 ### Emulator
@@ -154,7 +154,7 @@ It also contains a basic GUI ([egui](https://github.com/emilk/egui), [pixels](ht
 
 The other two crates, listed below, are alternative GUIs that you may use. If you are looking to just play a game however, simply use the default GUI inside of the <a href="#emulator">emulator crate</a>. If you do wish to use one of the options below, simply run `cargo run` in either directory/crate to start!
 
-- **(Recommended)** `frontend-imgui`: Debugger and non-scaling display using a dear-imgui binding, [imgui-rs](https://github.com/imgui-rs/imgui-rs).
+- **(Recommended)** `debugger`: Debugger and non-scaling display using a dear-imgui binding, [imgui-rs](https://github.com/imgui-rs/imgui-rs).
 - _(Buggy, do not use)_ `frontend-egui`: Minimalistic, scaling display using the rust crate [egui](https://github.com/emilk/egui).
 
 This project is still a work in progress, especially the user interfaces. They require a lot more polishing and some of these plans are listed in the <a href="#roadmap">roadmap</a></li>.
@@ -174,7 +174,7 @@ This project is still a work in progress, especially the user interfaces. They r
   - [ ] Debug Kirby 2 and Donkey Kong (likely STOP or MBC1 + RAM related)
 - User Interface
   - [ ] Implement more features in the emulator's GUI
-  - [ ] Scaling display in frontend-imgui
+  - [ ] Scaling display in debugger
   - [ ] Speed changing
   - [x] Custom key mapping
   - [x] Loading ROMs from file system

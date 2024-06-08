@@ -845,6 +845,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "debugger"
+version = "0.1.0"
+dependencies = [
+ "copypasta",
+ "emulator",
+ "glium",
+ "glow",
+ "hex",
+ "image",
+ "imgui",
+ "imgui-glium-renderer",
+ "imgui-glow-renderer",
+ "imgui-sdl2-support",
+ "imgui-winit-support",
+ "sdl2",
+]
+
+[[package]]
 name = "deflate"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1207,24 +1225,6 @@ dependencies = [
  "cmake",
  "libc",
  "pkg-config",
-]
-
-[[package]]
-name = "frontend-imgui"
-version = "0.1.0"
-dependencies = [
- "copypasta",
- "emulator",
- "glium",
- "glow",
- "hex",
- "image",
- "imgui",
- "imgui-glium-renderer",
- "imgui-glow-renderer",
- "imgui-sdl2-support",
- "imgui-winit-support",
- "sdl2",
 ]
 
 [[package]]

@@ -899,7 +899,7 @@ impl PPU {
         Some(pixel)
     }
 
-    // Used in frontend-imgui to display OAM sprites
+    // Used in debugger to display OAM sprites
     pub fn tile_to_vec(tile: &Tile) -> Vec<u8> {
         let mut vec: Vec<u8> = Vec::with_capacity(64 * 4);
         for row in tile {

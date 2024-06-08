@@ -1,9 +1,9 @@
 emulator/target
 emulator/target/*
-frontend-egui/target
-frontend-egui/target/*
-frontend-imgui/target
-frontend-imgui/target/*
+frontend/target
+frontend/target/*
+debugger/target
+debugger/target/*
 roms/*
 emulator/gb-log
 emulator/gb-vram-log
