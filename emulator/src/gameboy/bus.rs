@@ -168,13 +168,14 @@ impl Bus {
     }
 
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
-        let mask = interrupt.get_flag_mask();
+        //println!("Requesting interrupt: {:?}", interrupt);
+        let interrupt_bit = interrupt.get_flag_mask();
         let ifr = self.ram_read_byte(0xFF0F); // IF_REG
 
-        self.ram_write_byte(0xFF0F, ifr | mask);
+        self.ram_write_byte(0xFF0F, ifr | interrupt_bit);
     }
 
-    pub fn tick(&mut self, cycles: f64) {
+    pub fn tick(&mut self, cycles: u8) {
         self.timer.tick(cycles);
 
         let ppu_interrupts = self.ppu.tick(cycles as u16);

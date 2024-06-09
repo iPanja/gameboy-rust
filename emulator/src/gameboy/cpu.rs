@@ -69,7 +69,7 @@ impl CPU {
             if !self.interrupts_enabled {
                 // BUG
                 //println!("\thalt bug!");
-                return 4;
+                //return 4;
                 //self.registers.pc -= 1;
             }
         }
@@ -126,7 +126,7 @@ impl CPU {
                     bus.ram_write_byte(IF_REG, ifr & !0x10);
                 };
 
-                return Some(5);
+                return Some(8);
             };
         };
 
@@ -140,12 +140,12 @@ impl CPU {
 
         let cycles: u8 = match opcode {
             // FORMAT 0x00 => { statement ; clock_cycles }
+            0xCB => self.step_cb(bus),
             //
             // 8-Bit Loads
             //
             // LD nn, n
             // A
-            0xCB => self.step_cb(bus),
             0x06 => {
                 self.registers.b = self.read_byte(bus);
                 8
@@ -782,7 +782,7 @@ impl CPU {
             0xDE => {
                 let byte = self.read_byte(bus);
                 self.alu_sub(byte, true);
-                8 // 12?
+                8
             }
             // AND n
             0xA7 => {
@@ -1140,36 +1140,44 @@ impl CPU {
             0xC3 => {
                 let addr = self.read_word(bus);
                 self.jump_to(addr);
-                12
+                16
             }
             // JP cc, nn
             0xC2 => {
                 let addr = self.read_word(bus);
                 if !self.registers.f.zero {
                     self.jump_to(addr);
+                    16
+                } else {
+                    12
                 }
-                12
             }
             0xCA => {
                 let addr = self.read_word(bus);
                 if self.registers.f.zero {
                     self.jump_to(addr);
+                    16
+                } else {
+                    12
                 }
-                12
             }
             0xD2 => {
                 let addr = self.read_word(bus);
                 if !self.registers.f.carry {
                     self.jump_to(addr);
+                    16
+                } else {
+                    12
                 }
-                12
             }
             0xDA => {
                 let addr = self.read_word(bus);
                 if self.registers.f.carry {
                     self.jump_to(addr);
+                    16
+                } else {
+                    12
                 }
-                12
             }
             // JP (HL)
             0xE9 => {
@@ -1180,36 +1188,44 @@ impl CPU {
             0x18 => {
                 let offset = self.read_byte(bus) as i8;
                 self.jump_relative(offset);
-                8
+                12
             }
             // JR cc, n
             0x20 => {
                 let offset = self.read_byte(bus) as i8;
                 if !self.registers.f.zero {
                     self.jump_relative(offset);
+                    12
+                } else {
+                    8
                 }
-                8
             }
             0x28 => {
                 let offset = self.read_byte(bus) as i8;
                 if self.registers.f.zero {
                     self.jump_relative(offset);
+                    12
+                } else {
+                    8
                 }
-                8
             }
             0x30 => {
                 let offset = self.read_byte(bus) as i8;
                 if !self.registers.f.carry {
                     self.jump_relative(offset);
+                    12
+                } else {
+                    8
                 }
-                8
             }
             0x38 => {
                 let offset = self.read_byte(bus) as i8;
                 if self.registers.f.carry {
                     self.jump_relative(offset);
+                    12
+                } else {
+                    8
                 }
-                8
             }
             //
             // Calls
@@ -1218,36 +1234,44 @@ impl CPU {
             0xCD => {
                 let addr = self.read_word(bus);
                 self.call(bus, addr);
-                12
+                24
             }
             // CALL cc, nn
             0xC4 => {
                 let addr = self.read_word(bus);
                 if !self.registers.f.zero {
                     self.call(bus, addr);
+                    24
+                } else {
+                    12
                 }
-                12
             }
             0xCC => {
                 let addr = self.read_word(bus);
                 if self.registers.f.zero {
                     self.call(bus, addr);
+                    24
+                } else {
+                    12
                 }
-                12
             }
             0xD4 => {
                 let addr = self.read_word(bus);
                 if !self.registers.f.carry {
                     self.call(bus, addr);
+                    24
+                } else {
+                    12
                 }
-                12
             }
             0xDC => {
                 let addr = self.read_word(bus);
                 if self.registers.f.carry {
                     self.call(bus, addr);
+                    24
+                } else {
+                    12
                 }
-                12
             }
             //
             // Restarts
@@ -1291,32 +1315,40 @@ impl CPU {
             // RET
             0xC9 => {
                 self.ret(bus);
-                8
+                16
             }
             // RET cc
             0xC0 => {
                 if !self.registers.f.zero {
                     self.ret(bus);
+                    20
+                } else {
+                    8
                 }
-                8
             }
             0xC8 => {
                 if self.registers.f.zero {
                     self.ret(bus);
+                    20
+                } else {
+                    8
                 }
-                8
             }
             0xD0 => {
                 if !self.registers.f.carry {
                     self.ret(bus);
+                    20
+                } else {
+                    8
                 }
-                8
             }
             0xD8 => {
                 if self.registers.f.carry {
                     self.ret(bus);
+                    20
+                } else {
+                    8
                 }
-                8
             }
             // RETI
             0xD9 => {
@@ -1324,7 +1356,7 @@ impl CPU {
                 // bus.ram_write_byte(0xFFFF, 1);
                 self.interrupt_action = Some(true);
                 self.ret(bus);
-                8
+                16
             }
             //
             // Miscellaneous
@@ -1345,6 +1377,7 @@ impl CPU {
             0x10 => {
                 let _useless_byte = self.read_byte(bus);
                 println!("STOPPING @ {:#X}", self.registers.pc);
+                bus.timer.reset_div();
                 //self.is_halted = true;
                 4
             }

@@ -232,7 +232,7 @@ impl GameBoyState {
     fn update(&mut self) {
         let mut cycles: f64 = 0.0;
         while cycles < CYCLES_PER_FRAME {
-            cycles += self.gameboy.step();
+            cycles += self.gameboy.step() as f64;
         }
     }
 

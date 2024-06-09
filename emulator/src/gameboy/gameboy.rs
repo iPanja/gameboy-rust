@@ -32,7 +32,7 @@ impl GameBoy {
         let are_breakpoints_enabled: bool = _breakpoints.is_some();
 
         while current_frame_cycles < self.bus.timer.get_clock_freq() {
-            current_frame_cycles += self.step();
+            current_frame_cycles += self.step() as f64;
             if are_breakpoints_enabled && _breakpoints.unwrap().contains(&self.cpu.registers.pc) {
                 return true;
             }
@@ -41,8 +41,8 @@ impl GameBoy {
         return false;
     }
 
-    pub fn step(&mut self) -> f64 {
-        let _cycles = self.cpu.tick(&mut self.bus) as f64;
+    pub fn step(&mut self) -> u8 {
+        let _cycles: u8 = self.cpu.tick(&mut self.bus);
         self.bus.tick(_cycles);
 
         self.bus.timer.raise_interrupt = match self.bus.timer.raise_interrupt {

@@ -41,7 +41,7 @@ fn main() {
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = std::fs::File::open("../roms/interrupt_time.gb").expect("INVALID ROM");
+    let mut rom = std::fs::File::open("../roms/instr_timing.gb").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/individual/02-interrupts.gb").expect("INVALID ROM");
 
     //let mut rom = std::fs::File::open("../roms/Kirby.gb").expect("INVALID ROM");
@@ -300,7 +300,7 @@ fn perform_gameboy_frame(
     if *is_playing {
         while cycles < cycles_per_frame {
             //while cycles < gameboy.bus.timer.get_clock_freq() {
-            cycles += gameboy.step();
+            cycles += gameboy.step() as f64;
             if breakpoints.contains(&gameboy.cpu.registers.pc) {
                 *is_playing = false;
                 break;
