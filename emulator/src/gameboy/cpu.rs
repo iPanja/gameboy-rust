@@ -13,9 +13,11 @@ pub const IS_DEBUGGING: bool = false;
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct CPU {
     pub registers: Registers,
-    is_halted: bool,
+    pub is_halted: bool,
+    pub is_halt_bugged: bool,
     interrupt_action: Option<bool>,
-    interrupts_enabled: bool,
+    /// CPU Internal Flag: IME
+    pub interrupts_enabled: bool,
 }
 
 #[allow(unreachable_patterns)] // Some opcodes may fall under two categories, but either one will lead to the same result state
@@ -24,6 +26,7 @@ impl CPU {
         CPU {
             registers: Registers::new_post_boot_rom(), //Registers::new()
             is_halted: false,
+            is_halt_bugged: false,
             interrupt_action: Option::None,
             interrupts_enabled: false,
         }
@@ -51,8 +54,12 @@ impl CPU {
         ));
     }
 
+    pub fn is_interrupt_pending(&self, bus: &Bus) -> bool {
+        bus.ram_read_byte(IF_REG) & bus.ram_read_byte(IE_REG) & 0x1F != 0
+    }
+
     pub fn tick(&mut self, bus: &mut Bus) -> u8 {
-        // Handle pending interrupt action
+        // Handle pending (delayed) interrupt action
         self.interrupt_action = match self.interrupt_action {
             Some(x) => {
                 self.interrupts_enabled = x;
@@ -61,22 +68,16 @@ impl CPU {
             None => None,
         };
 
-        // HALT and HALT BUG
-        let is_interrupt_pending: bool = bus.ram_read_byte(IF_REG) & bus.ram_read_byte(IE_REG) != 0;
-
-        if self.is_halted && is_interrupt_pending {
-            self.is_halted = false;
-            if !self.interrupts_enabled {
-                // BUG
-                //println!("\thalt bug!");
-                //return 4;
-                //self.registers.pc -= 1;
-            }
-        }
-
+        // Handle HALT
         if self.is_halted {
-            //println!("halted!");
-            return 4;
+            if self.is_interrupt_pending(bus) {
+                // Interrupt exits halt
+                self.is_halted = false;
+                //self.is_halt_bugged = false;
+            } else {
+                // Still halted
+                return 4;
+            }
         }
 
         // Handle interrupts or next step
@@ -91,16 +92,19 @@ impl CPU {
 
     fn handle_interrupt(&mut self, bus: &mut Bus) -> Option<u8> {
         if self.interrupts_enabled {
-            let ifr = bus.ram_read_byte(IF_REG);
+            let ifr = bus.ram_read_byte(IF_REG) & 0x1F;
             let ier = bus.ram_read_byte(IE_REG);
 
             let triggers = ifr & ier;
             if triggers != 0 {
                 // Some interrupt flag is enabled
                 self.interrupt_action = None;
-                self.interrupts_enabled = false; // Disable interrupt until this one is completed (changed upon completion, in RETI call)
-                                                 //println!("{:#X}", ifr);
-                                                 //println!("{:#X}\n", ier);
+                self.interrupts_enabled = false;
+                // Disable interrupt until this one is completed (changed upon completion, in RETI call)
+                //self.is_halted = false;
+                //self.is_halt_bugged = false;
+                //println!("{:#X}", ifr);
+                //println!("{:#X}\n", ier);
 
                 // Handled in order of priority
                 // TODO - refactor into for loop
@@ -126,7 +130,7 @@ impl CPU {
                     bus.ram_write_byte(IF_REG, ifr & !0x10);
                 };
 
-                return Some(8);
+                return Some(20); // 5-M cycles
             };
         };
 
@@ -135,8 +139,14 @@ impl CPU {
 
     pub fn step(&mut self, bus: &mut Bus) -> u8 {
         let opcode = bus.ram_read_byte(self.registers.pc);
+
         //println!("instruction {:#X}: {:#X}", self.registers.pc, opcode);
         self.registers.pc = self.registers.pc.wrapping_add(1);
+        // HALT bug
+        if self.is_halt_bugged {
+            self.registers.pc -= 1;
+            self.is_halt_bugged = false;
+        }
 
         let cycles: u8 = match opcode {
             // FORMAT 0x00 => { statement ; clock_cycles }
@@ -1101,8 +1111,21 @@ impl CPU {
             0x00 => 4,
             // HALT
             0x76 => {
-                //println!("\tHALT INSTR! {:#X}", self.registers.pc - 1);
-                self.is_halted = true;
+                //let is_interrupt_pending: bool = bus.ram_read_byte(IF_REG) & bus.ram_read_byte(IE_REG) & 0x1F != 0;
+
+                if self.interrupts_enabled {
+                    // IME Enabled
+                    self.is_halted = true;
+                } else {
+                    // IME Disabled
+                    if self.is_interrupt_pending(bus) {
+                        // Pending interrupt - HALT BUG
+                        self.is_halt_bugged = true;
+                    } else {
+                        // No pending interrupts
+                        self.is_halted = true;
+                    }
+                }
                 4
             }
             // STOP

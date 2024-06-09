@@ -598,6 +598,13 @@ impl PPU {
         let flip_y: bool = attributes & 0b0100_0000 != 0;
         let mut row_index = self.ly + 16 - y_position as u8;
 
+        if row_index >= self.get_sprite_height() {
+            //println!("{:?}\t({:?})", row_index, self.get_sprite_height());
+            //panic!("aaa");
+            // TODO: RESOLVE THIS BANDAID!
+            return;
+        }
+
         // Handle 16-bit sprites - Determine which tile of the two to draw
         if self.get_sprite_height() == 16 {
             let mut is_first_tile = row_index < 8;

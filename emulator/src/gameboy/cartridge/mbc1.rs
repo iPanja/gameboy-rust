@@ -125,6 +125,7 @@ impl MBC for MBC1 {
                                 addr - 0xA000
                             }
                         }
+                        0 => (addr - 0xA000) as u16,
                         2000 | 8000 | _ => (addr - 0xA000) % self.ram_size as u16,
                     };
 

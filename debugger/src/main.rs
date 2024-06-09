@@ -41,7 +41,7 @@ fn main() {
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = std::fs::File::open("../roms/instr_timing.gb").expect("INVALID ROM");
+    let mut rom = std::fs::File::open("../roms/halt_bug.gb").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/individual/02-interrupts.gb").expect("INVALID ROM");
 
     //let mut rom = std::fs::File::open("../roms/Kirby.gb").expect("INVALID ROM");
@@ -463,6 +463,7 @@ fn render_gameboy_registers(ui: &mut Ui, gameboy: &mut GameBoy) {
                 .default_open(true)
                 .build(ui)
             {
+                ui.text(format!("IME - {:?}", gameboy.cpu.interrupts_enabled));
                 ui.text(format!(
                     "IF Reg - {:08b}",
                     gameboy.bus.ram_read_byte(0xFF0F)
@@ -471,6 +472,9 @@ fn render_gameboy_registers(ui: &mut Ui, gameboy: &mut GameBoy) {
                     "IE Reg - {:08b}",
                     gameboy.bus.ram_read_byte(0xFFFF)
                 ));
+                ui.separator();
+                ui.text(format!("HALT? - {:?}", gameboy.cpu.is_halted));
+                ui.text(format!("HALT BUG? - {:?}", gameboy.cpu.is_halt_bugged));
                 ui.separator();
 
                 if let Some(c_h) = &gameboy.cartridge_header {

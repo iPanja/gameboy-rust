@@ -23,6 +23,7 @@ pub struct Bus {
     #[serde(with = "BigArray")]
     hram: [u8; 0x7F],
     serial: [u8; 2],
+    /// IF_REG
     interrupt_flags: u8,
     interrupts_enabled: u8,
 }
@@ -72,7 +73,7 @@ impl Bus {
                     0xFF00 => self.joypad.read_byte(), // Joypad Input
                     0xFF01..=0xFF02 => self.serial[(address & 0x1) as usize], // SERIAL
                     0xFF04..=0xFF07 => self.timer.read_byte((address - 0xFF04) as usize), // Timer
-                    0xFF0F => self.interrupt_flags,
+                    0xFF0F => self.interrupt_flags | 0b1110_0000,
                     0xFF10..=0xFF3F => 0x0, // TODO: Audio & Audio Wave
                     0xFF40..=0xFF45 => self
                         .ppu
