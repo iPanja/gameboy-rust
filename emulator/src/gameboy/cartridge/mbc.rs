@@ -1,3 +1,6 @@
+// Helpful constants
+const Mbit_16: u32 = 16 * 1024;
+
 #[typetag::serde(tag = "type")]
 pub trait MBC {
     fn read_byte(&self, addr: u16) -> u8;

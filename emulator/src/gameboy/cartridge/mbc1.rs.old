@@ -1,0 +1,187 @@
+use super::{CartridgeHeader, MBC};
+use serde_big_array::BigArray;
+
+const ROM_BANK_COUNT: usize = 128;
+const ROM_BANK_SIZE: usize = 0x4000;
+const ROM_SIZE: usize = ROM_BANK_COUNT * ROM_BANK_SIZE;
+
+const RAM_BANK_COUNT: usize = 4;
+const RAM_BANK_SIZE: usize = 0x2000;
+const RAM_SIZE: usize = RAM_BANK_COUNT * RAM_BANK_SIZE;
+
+// More complicated implementation
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct MBC1 {
+    rom: Vec<u8>,
+    #[serde(with = "BigArray")]
+    ram: [u8; RAM_SIZE],
+    is_ram_enabled: bool,
+
+    rom_bank_index: u8, // unsigned 5-bit number (mask with 0b1_1111); Used in region $4000-$7FFF
+    ram_bank_index: u8, // unsigned 2-bit number (mask with 0b11); Used in region $A000-BFFF
+    is_rom_mode: bool,  // mode flag; determines if ROM/RAM banking
+
+    rom_size: usize,
+    ram_size: usize,
+}
+
+impl MBC1 {
+    /*pub*/
+    pub fn new(ch: &CartridgeHeader) -> Self {
+        let rom_size = 32000 * (1 << ch.rom_size_code);
+
+        let ram_size = match ch.ram_size_code {
+            0x00 => 0,
+            0x01 => 0,
+            0x02 => 8,
+            0x03 => 32,
+            0x04 => 128,
+            0x05 => 64,
+            _ => 0,
+        } * 1024;
+
+        MBC1 {
+            rom: vec![0; ROM_SIZE],
+            ram: [0; RAM_SIZE],
+            is_ram_enabled: false,
+            rom_bank_index: 1,
+            ram_bank_index: 1,
+            is_rom_mode: true,
+            rom_size: rom_size,
+            ram_size: ram_size,
+        }
+    }
+}
+
+#[typetag::serde]
+impl MBC for MBC1 {
+    fn read_byte(&self, addr: u16) -> u8 {
+        match addr {
+            0x0000..=0x3FFF => {
+                // ROM Bank 0
+                if !self.is_rom_mode {
+                    //self.rom[self.rom_bank_index as usize * ROM_BANK_SIZE as usize + addr as usize]
+                    self.rom[addr as usize]
+                } else {
+                    let read_addr = 0x4000 * self.zero_bank_number() + addr as usize;
+                    self.rom[read_addr as usize]
+                }
+            }
+            0x4000..=0x7FFF => {
+                // ROM Bank 01-7F
+                let read_addr = 0x4000 * self.high_bank_number() + (addr - 0x4000) as usize;
+                self.rom[read_addr]
+            }
+            0xA000..=0xBFFF => {
+                // RAM Bank 0-3
+                if self.is_ram_enabled {
+                    if self.ram_size == 2000 || self.ram_size == 8000 {
+                        self.ram[(addr as usize - 0xA000) % self.ram_size]
+                    } else {
+                        if self.is_rom_mode {
+                            self.ram
+                                [0x2000 * self.ram_bank_index as usize + (addr as usize - 0xA000)]
+                        } else {
+                            self.ram[(addr - 0xA000) as usize]
+                        }
+                    }
+                } else {
+                    0xFF
+                }
+            }
+            _ => panic!("Unsupported MBC0 memory read @{:#X}", addr),
+        }
+    }
+
+    fn write_byte(&mut self, addr: u16, byte: u8) {
+        match addr {
+            0x0000..=0x1FFF => {
+                // RAM Enable (Write Only)
+                if byte & 0xF == 0xA {
+                    self.is_ram_enabled = true;
+                } else {
+                    self.is_ram_enabled = false;
+                }
+            }
+            0x2000..=0x3FFF => {
+                self.rom_bank_index = byte & 0b1_1111;
+                if self.rom_bank_index == 0 {
+                    self.rom_bank_index = 1;
+                } else {
+                    // MASK
+                    self.rom_bank_index &= self.rom_size_bit_mask()
+                }
+                //println!("ROM Bank Swap -> {}", self.rom_bank_index);
+            } // Read-only ROM Bank X0
+            0x4000..=0x5FFF => self.ram_bank_index = byte & 0x3, // RAM Bank Index
+            0x6000..=0x7FFF => self.is_rom_mode = (byte & 0x1) != 0, // Mode Flag
+            0xA000..=0xBFFF => {
+                // RAM Bank 00-03 (if any)
+                if self.is_ram_enabled {
+                    let write_addr = match self.ram_size {
+                        32000 => {
+                            if self.is_rom_mode {
+                                0x2000 * self.ram_bank_index as u16 + (addr - 0xA000)
+                            } else {
+                                addr - 0xA000
+                            }
+                        }
+                        0 => (addr - 0xA000) as u16,
+                        2000 | 8000 | _ => (addr - 0xA000) % self.ram_size as u16,
+                    };
+
+                    self.ram[write_addr as usize] = byte;
+                } else {
+                    ()
+                }
+            }
+            _ => panic!("Unsupported MBC0 memory access (write) @{:#X}", addr),
+        }
+    }
+
+    fn load_rom(&mut self, rom_data: &[u8]) {
+        println!("loading {:?} bytes", rom_data.len());
+        for i in 0..rom_data.len() {
+            self.rom[i] = rom_data[i];
+        }
+    }
+}
+
+impl MBC1 {
+    fn zero_bank_number(&self) -> usize {
+        if self.rom_size < 1024000 {
+            0
+        } else if self.rom_size == 1024000 {
+            ((self.ram_bank_index & 0b10_0000) << 5) as usize
+            // TODO: Exception: Multi-Cart ROMs
+        } else {
+            ((self.ram_bank_index & 0b110_0000) << 5) as usize
+        }
+    }
+
+    fn high_bank_number(&self) -> usize {
+        if self.rom_size < 1024000 {
+            (self.rom_bank_index & self.rom_size_bit_mask()) as usize
+        } else if self.rom_size == 1024000 {
+            let n = (self.rom_bank_index & self.rom_size_bit_mask()) as usize;
+            n & !(0b10_0000 & (self.ram_bank_index & 0x1) << 5) as usize
+        } else {
+            let n = (self.rom_bank_index & self.rom_size_bit_mask()) as usize;
+            n & !(0b110_0000 & (self.ram_bank_index & 0x3) << 5) as usize
+        }
+    }
+
+    fn rom_size_bit_mask(&self) -> u8 {
+        match self.rom_size {
+            2048000 => 0b00011111,
+            1024000 => 0b00011111,
+            512000 => 0b00011111,
+            256000 => 0b00001111,
+            128000 => 0b00000111,
+            64000 => 0b00000011,
+            32000 => 0b00000001,
+            _ => 0b00011111,
+        }
+    }
+}

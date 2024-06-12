@@ -60,7 +60,7 @@ fn main() -> Result<(), Error> {
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
         let pixels = Pixels::new(
             SCREEN_WIDTH as u32,
-            SCREEN_HEIGHT as u32 + 20,
+            SCREEN_HEIGHT as u32 + 10,
             surface_texture,
         )?;
         let framework = Framework::new(
@@ -259,7 +259,7 @@ impl GameBoyState {
     /// Assumes the default texture format: `wgpu::TextureFormat::Rgba8UnormSrgb`
     fn draw(&self, frame: &mut [u8]) {
         let display = self.gameboy.bus.ppu.get_display();
-        let fixed_display = [0 as u8; 160 * 20 * 4].as_slice();
+        let fixed_display = [0 as u8; 160 * 10 * 4].as_slice();
         let display_slice = display.as_slice();
         let result = [fixed_display, display_slice].concat();
 

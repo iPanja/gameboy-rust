@@ -1,53 +1,73 @@
 use super::{CartridgeHeader, MBC};
 use serde_big_array::BigArray;
 
-const ROM_BANK_COUNT: usize = 128;
+/// Max 16Mbit ROM (128 banks of 0x4000 bytes or 16KiB)
 const ROM_BANK_SIZE: usize = 0x4000;
-const ROM_SIZE: usize = ROM_BANK_COUNT * ROM_BANK_SIZE;
 
-const RAM_BANK_COUNT: usize = 4;
+/// Max 256bit RAM (4 banks of 0x2000 bytes or 8KiB)
 const RAM_BANK_SIZE: usize = 0x2000;
-const RAM_SIZE: usize = RAM_BANK_COUNT * RAM_BANK_SIZE;
+
+// More complicated implementation
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct MBC1 {
     rom: Vec<u8>,
-    #[serde(with = "BigArray")]
-    ram: [u8; RAM_SIZE],
-    is_ram_enabled: bool,
+    ram: Vec<u8>,
 
-    rom_bank_index: u8, // unsigned 5-bit number (mask with 0b1_1111); Used in region $4000-$7FFF
-    ram_bank_index: u8, // unsigned 2-bit number (mask with 0b11); Used in region $A000-BFFF
-    is_rom_mode: bool,  // mode flag; determines if ROM/RAM banking
+    /// **RAM gate register** - only lower nibble (3-0) is used, upper nibble is ignored during writes
+    ///
+    /// Used to enable access to the cartridge SRAM (if one exists).
+    /// This access is *disabled* by default.
+    ///
+    /// Effectively, ram_access = ramg & 0x0F == 0xA, so this could instead be stored internally as a boolean
+    ramg: u8,
 
-    rom_size: usize,
-    ram_size: usize,
+    /// **Bank register 1** - 5 bit register (only bits 4-0 are used)
+    ///
+    /// Used as the lower 5 bits of the ROM bank number when reading from 0x4000-0x7FFF.
+    /// Can not contain 0b0_0000, attempting to write 0 will instead write 1.
+    /// So memory banks 0x00, 0x20, 0x40, 0x60 are impossible to read.
+    bank1: u8,
+
+    /// **Bank register 2** - 2 bit register (only bits 1-0 are used)
+    ///
+    /// Can be used as the upper bits of the ROM bank number, or as the 2-bit RAM bank number.
+    bank2: u8,
+
+    /// **Mode register**
+    ///
+    /// Determines how the BANK2 register value is used during memory accesses.
+    ///
+    /// 0b1 = BANK2 affects accesses to 0x0000-0x3FFF, 0x4000-0x7FFF, 0xA000-0xBFFF.
+    ///
+    /// 0b0 = BANK2 affects only accesses to 0x4000-0x7FFF.
+    mode: bool,
+
+    rom_bank_count: i32,
+    ram_bank_count: i32,
+
+    rom_mask: usize,
+    ram_mask: usize,
 }
 
 impl MBC1 {
     /*pub*/
     pub fn new(ch: &CartridgeHeader) -> Self {
-        let rom_size = 32000 * (1 << ch.rom_size_code);
-
-        let ram_size = match ch.ram_size_code {
-            0x00 => 0,
-            0x01 => 0,
-            0x02 => 8,
-            0x03 => 32,
-            0x04 => 128,
-            0x05 => 64,
-            _ => 0,
-        } * 1024;
-
+        println!("CH: {:?}", ch);
         MBC1 {
-            rom: vec![0; ROM_SIZE],
-            ram: [0; RAM_SIZE],
-            is_ram_enabled: false,
-            rom_bank_index: 1,
-            ram_bank_index: 1,
-            is_rom_mode: true,
-            rom_size: rom_size,
-            ram_size: ram_size,
+            rom: vec![0; ch.rom_size as usize * 1024], // rom_size * 320000?
+            ram: vec![0; ch.ram_size as usize * 1024], // ram_size * 1024?
+
+            ramg: 0,
+            bank1: 1,
+            bank2: 0,
+            mode: false,
+
+            rom_bank_count: ch.rom_bank_count,
+            ram_bank_count: ch.ram_bank_count,
+
+            rom_mask: MBC1::get_bit_mask(ch.rom_bank_count as usize),
+            ram_mask: MBC1::get_bit_mask(ch.ram_bank_count as usize),
         }
     }
 }
@@ -57,38 +77,38 @@ impl MBC for MBC1 {
     fn read_byte(&self, addr: u16) -> u8 {
         match addr {
             0x0000..=0x3FFF => {
-                // ROM Bank 0
-                if !self.is_rom_mode {
-                    //self.rom[self.rom_bank_index as usize * ROM_BANK_SIZE as usize + addr as usize]
-                    self.rom[addr as usize]
+                // ROM Bank X0
+                let bank_no: usize = if !self.mode {
+                    // Mode 0b0
+                    0
                 } else {
-                    let read_addr = 0x4000 * self.zero_bank_number() + addr as usize;
-                    self.rom[read_addr as usize]
-                }
+                    // Mode 0b1
+                    (self.bank2 << 5) as usize
+                };
+                self.rom_read_byte(bank_no, addr as usize - 0x000)
             }
             0x4000..=0x7FFF => {
+                // Switchable ROM Bank
                 // ROM Bank 01-7F
-                let read_addr = 0x4000 * self.high_bank_number() + (addr - 0x4000) as usize;
-                self.rom[read_addr]
+                let bank_no = (self.bank2 << 5) | self.bank1;
+                self.rom_read_byte(bank_no as usize, addr as usize - 0x4000)
             }
             0xA000..=0xBFFF => {
                 // RAM Bank 0-3
-                if self.is_ram_enabled {
-                    if self.ram_size == 2000 || self.ram_size == 8000 {
-                        self.ram[(addr as usize - 0xA000) % self.ram_size]
+                if self.is_ram_accessible() {
+                    let bank_no: usize = if !self.mode {
+                        // Mode 0b0
+                        0
                     } else {
-                        if self.is_rom_mode {
-                            self.ram
-                                [0x2000 * self.ram_bank_index as usize + (addr as usize - 0xA000)]
-                        } else {
-                            self.ram[(addr - 0xA000) as usize]
-                        }
-                    }
+                        // Mode 0b1
+                        self.bank2 as usize
+                    };
+                    self.ram_read_byte(bank_no, (addr - 0xA000) as usize)
                 } else {
                     0xFF
                 }
             }
-            _ => panic!("Unsupported MBC0 memory read @{:#X}", addr),
+            _ => panic!("Unsupported MBC1 memory read @{:#X}", addr),
         }
     }
 
@@ -96,42 +116,37 @@ impl MBC for MBC1 {
         match addr {
             0x0000..=0x1FFF => {
                 // RAM Enable (Write Only)
-                if byte & 0xF == 0xA {
-                    self.is_ram_enabled = true;
-                } else {
-                    self.is_ram_enabled = false;
-                }
+                self.ramg = byte & 0xF; // Upper nibble is ignored during writes
             }
             0x2000..=0x3FFF => {
-                self.rom_bank_index = byte & 0b1_1111;
-                if self.rom_bank_index == 0 {
-                    self.rom_bank_index = 1;
-                } else {
-                    // MASK
-                    self.rom_bank_index &= self.rom_size_bit_mask()
+                // ROM Bank Index
+                // Selects the lower 5 bits of ROM bank number
+                // Writing 0x00 translates to 0x01
+                self.bank1 = byte & 0b1_1111;
+                if self.bank1 == 0 {
+                    self.bank1 = 1;
                 }
-                //println!("ROM Bank Swap -> {}", self.rom_bank_index);
-            } // Read-only ROM Bank X0
-            0x4000..=0x5FFF => self.ram_bank_index = byte & 0x3, // RAM Bank Index
-            0x6000..=0x7FFF => self.is_rom_mode = (byte & 0x1) != 0, // Mode Flag
+            }
+            0x4000..=0x5FFF => {
+                // RAM Bank Index
+                // 2 bit register, depending on cartridge mode:
+                //  > Selects RAM banks 0-3
+                //  > Specifies the upper 2 bits of ROM bank
+                self.bank2 = byte & 0b11;
+            }
+            0x6000..=0x7FFF => {
+                // ROM/RAM Mode
+                // Mode 0 - ROM Banking Mode (default)
+                //  > Only RAM bank 0 can be accessed in this mode
+                // Mode 1 - RAM Banking Mode
+                //  > Only ROM banks 0x01-0x1F can be accessed in this mode
+                //  > Other ROM banks will be changed to their corresponding in 0x01-0x1F by clearing the upper 2 bits
+                self.mode = byte & 0x1 != 0;
+            }
             0xA000..=0xBFFF => {
                 // RAM Bank 00-03 (if any)
-                if self.is_ram_enabled {
-                    let write_addr = match self.ram_size {
-                        32000 => {
-                            if self.is_rom_mode {
-                                0x2000 * self.ram_bank_index as u16 + (addr - 0xA000)
-                            } else {
-                                addr - 0xA000
-                            }
-                        }
-                        0 => (addr - 0xA000) as u16,
-                        2000 | 8000 | _ => (addr - 0xA000) % self.ram_size as u16,
-                    };
-
-                    self.ram[write_addr as usize] = byte;
-                } else {
-                    ()
+                if self.is_ram_accessible() {
+                    self.ram_write_byte(self.bank2 as usize, (addr - 0xA000) as usize, byte);
                 }
             }
             _ => panic!("Unsupported MBC0 memory access (write) @{:#X}", addr),
@@ -140,6 +155,11 @@ impl MBC for MBC1 {
 
     fn load_rom(&mut self, rom_data: &[u8]) {
         println!("loading {:?} bytes", rom_data.len());
+        println!("\tROM SIZE: {:?}", self.rom.len());
+        println!("\t\tMask: {:#b}", self.rom_mask);
+        println!("\tRAM SIZE: {:?}", self.ram.len());
+        println!("\t\tMask: {:#b}", self.ram_mask);
+
         for i in 0..rom_data.len() {
             self.rom[i] = rom_data[i];
         }
@@ -147,39 +167,47 @@ impl MBC for MBC1 {
 }
 
 impl MBC1 {
-    fn zero_bank_number(&self) -> usize {
-        if self.rom_size < 1024000 {
-            0
-        } else if self.rom_size == 1024000 {
-            ((self.ram_bank_index & 0b10_0000) << 5) as usize
-            // TODO: Exception: Multi-Cart ROMs
-        } else {
-            ((self.ram_bank_index & 0b110_0000) << 5) as usize
+    /// Form bit mask for the current sized ROM
+    ///
+    /// *Ex:* 64KiB => 4 banks => 2 bits => mask: 0b11
+    fn get_bit_mask(bank_count: usize) -> usize {
+        let mask_size = f32::ceil((bank_count as f32).log2()) as usize;
+        let mut mask = 0;
+
+        for _ in 0..mask_size {
+            mask <<= 1;
+            mask |= 1;
         }
+
+        mask
     }
 
-    fn high_bank_number(&self) -> usize {
-        if self.rom_size < 1024000 {
-            (self.rom_bank_index & self.rom_size_bit_mask()) as usize
-        } else if self.rom_size == 1024000 {
-            let n = (self.rom_bank_index & self.rom_size_bit_mask()) as usize;
-            n & !(0b10_0000 & (self.ram_bank_index & 0x1) << 5) as usize
-        } else {
-            let n = (self.rom_bank_index & self.rom_size_bit_mask()) as usize;
-            n & !(0b110_0000 & (self.ram_bank_index & 0x3) << 5) as usize
-        }
+    // Helper Methods
+    fn is_ram_accessible(&self) -> bool {
+        // We care only about the lower nibble
+        // The upper nibble should always be 0 since I mask in write_byte, but I mask again just in case
+        (self.ramg & 0x0F == 0b1010) && self.ram_bank_count != 0
     }
 
-    fn rom_size_bit_mask(&self) -> u8 {
-        match self.rom_size {
-            2048000 => 0b00011111,
-            1024000 => 0b00011111,
-            512000 => 0b00011111,
-            256000 => 0b00001111,
-            128000 => 0b00000111,
-            64000 => 0b00000011,
-            32000 => 0b00000001,
-            _ => 0b00011111,
-        }
+    // ROM R/W
+    fn rom_read_byte(&self, bank_no: usize, offset: usize) -> u8 {
+        let real_bank_no: usize = bank_no & self.rom_mask;
+        self.rom[real_bank_no * ROM_BANK_SIZE + offset]
+    }
+
+    fn rom_write_byte(&mut self, bank_no: usize, offset: usize, byte: u8) {
+        let real_bank_no: usize = bank_no & self.rom_mask;
+        self.rom[real_bank_no * ROM_BANK_SIZE + offset] = byte;
+    }
+
+    // RAM R/W
+    fn ram_read_byte(&self, bank_no: usize, offset: usize) -> u8 {
+        let real_bank_no: usize = bank_no & self.ram_mask;
+        self.ram[real_bank_no * RAM_BANK_SIZE + offset]
+    }
+
+    fn ram_write_byte(&mut self, bank_no: usize, offset: usize, byte: u8) {
+        let real_bank_no: usize = bank_no & self.ram_mask;
+        self.ram[real_bank_no * RAM_BANK_SIZE + offset] = byte;
     }
 }
