@@ -56,7 +56,7 @@ impl MBC1 {
         println!("CH: {:?}", ch);
         MBC1 {
             rom: vec![0; ch.rom_size as usize * 1024], // rom_size * 320000?
-            ram: vec![0; ch.ram_size as usize * 1024], // ram_size * 1024?
+            ram: vec![0xFF; ch.ram_size as usize * 1024], // ram_size * 1024?
 
             ramg: 0,
             bank1: 1,
@@ -96,14 +96,8 @@ impl MBC for MBC1 {
             0xA000..=0xBFFF => {
                 // RAM Bank 0-3
                 if self.is_ram_accessible() {
-                    let bank_no: usize = if !self.mode {
-                        // Mode 0b0
-                        0
-                    } else {
-                        // Mode 0b1
-                        self.bank2 as usize
-                    };
-                    self.ram_read_byte(bank_no, (addr - 0xA000) as usize)
+                    let bank_no = if self.mode { self.bank2 } else { 0 };
+                    self.ram_read_byte(bank_no as usize, (addr - 0xA000) as usize)
                 } else {
                     0xFF
                 }
@@ -141,12 +135,13 @@ impl MBC for MBC1 {
                 // Mode 1 - RAM Banking Mode
                 //  > Only ROM banks 0x01-0x1F can be accessed in this mode
                 //  > Other ROM banks will be changed to their corresponding in 0x01-0x1F by clearing the upper 2 bits
-                self.mode = byte & 0x1 != 0;
+                self.mode = byte & 0b1 != 0;
             }
             0xA000..=0xBFFF => {
                 // RAM Bank 00-03 (if any)
                 if self.is_ram_accessible() {
-                    self.ram_write_byte(self.bank2 as usize, (addr - 0xA000) as usize, byte);
+                    let bank_no = if self.mode { self.bank2 } else { 0 };
+                    self.ram_write_byte(bank_no as usize, (addr - 0xA000) as usize, byte);
                 }
             }
             _ => panic!("Unsupported MBC0 memory access (write) @{:#X}", addr),
@@ -167,7 +162,7 @@ impl MBC for MBC1 {
 }
 
 impl MBC1 {
-    /// Form bit mask for the current sized ROM
+    /// Form bit mask depending on the amount of banks for the ROM/RAM
     ///
     /// *Ex:* 64KiB => 4 banks => 2 bits => mask: 0b11
     fn get_bit_mask(bank_count: usize) -> usize {
@@ -182,32 +177,44 @@ impl MBC1 {
         mask
     }
 
-    // Helper Methods
+    /// RAM is only accessible when RAMG's lower nibble is 0xA and there is RAM
     fn is_ram_accessible(&self) -> bool {
-        // We care only about the lower nibble
-        // The upper nibble should always be 0 since I mask in write_byte, but I mask again just in case
-        (self.ramg & 0x0F == 0b1010) && self.ram_bank_count != 0
+        self.ramg == 0b1010 && self.ram_bank_count > 0
     }
 
     // ROM R/W
     fn rom_read_byte(&self, bank_no: usize, offset: usize) -> u8 {
-        let real_bank_no: usize = bank_no & self.rom_mask;
-        self.rom[real_bank_no * ROM_BANK_SIZE + offset]
+        self.rom[self.get_rom_address(bank_no, offset)]
     }
 
     fn rom_write_byte(&mut self, bank_no: usize, offset: usize, byte: u8) {
+        let addr = self.get_rom_address(bank_no, offset);
+        self.rom[addr] = byte;
+    }
+
+    fn get_rom_address(&self, bank_no: usize, offset: usize) -> usize {
         let real_bank_no: usize = bank_no & self.rom_mask;
-        self.rom[real_bank_no * ROM_BANK_SIZE + offset] = byte;
+        real_bank_no * ROM_BANK_SIZE + offset
     }
 
     // RAM R/W
     fn ram_read_byte(&self, bank_no: usize, offset: usize) -> u8 {
-        let real_bank_no: usize = bank_no & self.ram_mask;
-        self.ram[real_bank_no * RAM_BANK_SIZE + offset]
+        self.ram[self.get_ram_address(offset)]
     }
 
     fn ram_write_byte(&mut self, bank_no: usize, offset: usize, byte: u8) {
-        let real_bank_no: usize = bank_no & self.ram_mask;
-        self.ram[real_bank_no * RAM_BANK_SIZE + offset] = byte;
+        let addr = self.get_ram_address(offset);
+        self.ram[addr] = byte;
+    }
+
+    fn get_ram_address(&self, offset: usize) -> usize {
+        let bank_no: usize = (if self.mode {
+            self.bank2 as usize & self.ram_mask
+        } else {
+            0
+        }) as usize;
+        let real_offset = offset % (self.ram.len() + 1);
+
+        bank_no * RAM_BANK_SIZE + real_offset
     }
 }

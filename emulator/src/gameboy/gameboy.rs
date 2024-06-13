@@ -76,6 +76,9 @@ impl GameBoy {
             match c_h.cartridge_type_code {
                 0x00 => self.bus.mbc = Box::new(super::cartridge::MBC0::new()),
                 0x01 | 0x02 | 0x03 => self.bus.mbc = Box::new(super::cartridge::MBC1::new(c_h)),
+                0x0F | 0x10 | 0x11 | 0x12 | 0x13 => {
+                    self.bus.mbc = Box::new(super::cartridge::MBC3::new(c_h))
+                }
                 _ => {
                     panic!("Unsupported cartridge!\n\t{:#X}\n", c_h.cartridge_type_code);
                     //self.bus.mbc = Box::new(super::cartridge::MBC0::new())

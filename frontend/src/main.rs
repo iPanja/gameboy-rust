@@ -198,8 +198,9 @@ impl GameBoyState {
 
         gbs.gameboy
             .read_boot_rom(&GameBoyState::read_rom_into_buffer("DMG_ROM.bin"));
-        gbs.gameboy
-            .read_rom(&GameBoyState::read_rom_into_buffer("Kirby.gb"));
+        gbs.gameboy.read_rom(&GameBoyState::read_rom_into_buffer(
+            "emulator-only/mbc1/ram_256kb.gb",
+        ));
 
         //GameBoySnapshot::load(&mut gbs.gameboy);
         gbs
