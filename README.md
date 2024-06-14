@@ -68,7 +68,6 @@ This is a work-in-progress Game Boy (specifically [DMG-01](https://en.wikipedia.
 - Joypad Input
 - Timer
 - Interrupts
-- Custom Keybinds
 
 ### Tests Passed
 
