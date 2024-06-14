@@ -64,6 +64,7 @@ This is a work-in-progress Game Boy (specifically [DMG-01](https://en.wikipedia.
 - MBC (Memory Bank Controllers)
   - MBC0
   - MBC1
+  - MBC3 (no RTC)
 - Joypad Input
 - Timer
 - Interrupts
@@ -71,8 +72,16 @@ This is a work-in-progress Game Boy (specifically [DMG-01](https://en.wikipedia.
 
 ### Tests Passed
 
-- Blargg's CPU instructions
+- Blargg's Test ROMS
+  - cpu_instrs
+  - halt_bug
+  - instr_timing
 - Acid2
+- Mooneye Test Suite
+  - MBC1: 26/26
+  - bits: 2/3
+  - daa: 1/1
+  - oam_dma: 2/3
 
 ### Demos
 
@@ -99,7 +108,7 @@ All you should need to run/debug this locally is [Rust](https://www.rust-lang.or
 
 ```
 git clone https://github.com/iPanja/gameboy-rust
-cd gameboy-rust/emulator
+cd gameboy-rust/frontend
 cargo run
 # Download a GameBoy ROM online and load it via File > Load ROM
 ```
@@ -136,26 +145,28 @@ There are three separate packages in this repository.
 
 - emulator
 - debugger
-- frontend-egui
+- frontend
 
 ### Emulator
 
-**Recommended to run this crate (`cargo run`)!**
-
 This houses the core of the Game Boy emulator. Currently, it has all most all of the features you might expect, _except_ sound.
 
-It also contains a basic GUI ([egui](https://github.com/emilk/egui), [pixels](https://github.com/parasyte/pixels)) with features such as:
+### Frontend
 
-1. Loading ROMs from your file system
-2. Customizing keybinds and saving/restoring them
-3. (WIP) A game save manager
+**Recommended to run this crate (`cargo run`)!**
 
-### Alternative GUIs
+This crate is a minimalistic frontend utilizing [egui](https://github.com/emilk/egui), [pixels](https://github.com/parasyte/pixels). So if you just want to play a game, run this crate!
 
-The other two crates, listed below, are alternative GUIs that you may use. If you are looking to just play a game however, simply use the default GUI inside of the <a href="#emulator">emulator crate</a>. If you do wish to use one of the options below, simply run `cargo run` in either directory/crate to start!
+Features:
 
-- **(Recommended)** `debugger`: Debugger and non-scaling display using a dear-imgui binding, [imgui-rs](https://github.com/imgui-rs/imgui-rs).
-- _(Buggy, do not use)_ `frontend-egui`: Minimalistic, scaling display using the rust crate [egui](https://github.com/emilk/egui).
+- Configurable keybinds (with save/load support)
+- Loading ROMs from your file system
+- WIP color palette changer
+- Very rudimentary game save manager (RAM/battery)
+
+### Debugger
+
+A debugger and non-scaling display using a dear-imgui binding, [imgui-rs](https://github.com/imgui-rs/imgui-rs).
 
 This project is still a work in progress, especially the user interfaces. They require a lot more polishing and some of these plans are listed in the <a href="#roadmap">roadmap</a></li>.
 
@@ -168,7 +179,7 @@ This project is still a work in progress, especially the user interfaces. They r
 - Emulator
   - [ ] Implement a save manager
   - [ ] Fix timer, currently runs too fast (see Super Mario Land)
-  - [ ] Implement the MBC(s) needed to play the Pokemon games
+  - [x] Implement the MBC(s) needed to play the Pokemon games
   - [ ] Speed changing
   - [ ] Pixel FIFO
   - [ ] Debug Kirby 2 and Donkey Kong (likely STOP or MBC1 + RAM related)
