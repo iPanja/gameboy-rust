@@ -144,7 +144,7 @@ impl MBC for MBC1 {
                     self.ram_write_byte(bank_no as usize, (addr - 0xA000) as usize, byte);
                 }
             }
-            _ => panic!("Unsupported MBC0 memory access (write) @{:#X}", addr),
+            _ => panic!("Unsupported MBC1 memory access (write) @{:#X}", addr),
         }
     }
 

@@ -22,7 +22,7 @@ pub struct MBC3 {
     /// Effectively, ram_access = ramg & 0x0F == 0xA, so this could instead be stored internally as a boolean
     ramg: u8,
 
-    /// **Bank register 1** - 5 bit register (only bits 4-0 are used)
+    /// **Bank register 1** - 7 bit register (only bits 4-0 are used)
     ///
     /// Used as the lower 7 bits of the ROM bank number when reading from 0x4000-0x7FFF.
     bank1: u8,
@@ -99,38 +99,33 @@ impl MBC for MBC3 {
     fn read_byte(&self, addr: u16) -> u8 {
         match addr {
             0x0000..=0x3FFF => {
-                // ROM Bank X0
-                let bank_no: usize = if !self.mode {
-                    // Mode 0b0
-                    0
-                } else {
-                    // Mode 0b1
-                    (self.bank2 << 5) as usize
-                };
-                self.rom_read_byte(bank_no, addr as usize - 0x000)
+                // ROM Bank 00
+                self.rom_read_byte(0, addr as usize - 0x000)
             }
             0x4000..=0x7FFF => {
                 // Switchable ROM Bank
                 // ROM Bank 01-7F
-                let bank_no = (self.bank2 << 5) | self.bank1;
+                let bank_no = ((self.bank2 & 0b11) << 7) | self.bank1;
                 self.rom_read_byte(bank_no as usize, addr as usize - 0x4000)
             }
             0xA000..=0xBFFF => {
                 // RAM Bank 0-3
-                match self.bank2 {
-                    0x08..=0x0C => {
-                        // RTC
-                        self.rtc[(self.bank2 - 0x08) as usize]
-                    }
-                    _ => {
-                        // RAM
-                        if self.is_ram_rtc_accessible() {
-                            let bank_no = if self.mode { self.bank2 & 0b11 } else { 0 };
-                            self.ram_read_byte(bank_no as usize, (addr - 0xA000) as usize)
-                        } else {
-                            0xFF
+                if self.is_ram_rtc_accessible() {
+                    match self.bank2 {
+                        0x08..=0x0C => {
+                            // RTC
+                            self.rtc[(self.bank2 - 0x08) as usize]
+                        }
+                        _ => {
+                            // RAM
+                            self.ram_read_byte(
+                                (self.bank2 & 0b11) as usize,
+                                (addr - 0xA000) as usize,
+                            )
                         }
                     }
+                } else {
+                    0xFF
                 }
             }
             _ => panic!("Unsupported MBC1 memory read @{:#X}", addr),
@@ -147,6 +142,9 @@ impl MBC for MBC3 {
                 // ROM Bank Index
                 // Selects the lower 7 bits of ROM bank number
                 self.bank1 = byte & 0b111_1111;
+                if self.bank1 == 0 {
+                    self.bank1 = 1;
+                }
             }
             0x4000..=0x5FFF => {
                 // RAM Bank Index or RTC Index
@@ -171,11 +169,23 @@ impl MBC for MBC3 {
             0xA000..=0xBFFF => {
                 // RAM Bank 00-03 (if any)
                 if self.is_ram_rtc_accessible() {
-                    let bank_no = if self.mode { self.bank2 } else { 0 };
-                    self.ram_write_byte(bank_no as usize, (addr - 0xA000) as usize, byte);
+                    match self.bank2 {
+                        0x08..=0x0C => {
+                            // RTC
+                            self.rtc[(self.bank2 - 0x08) as usize] = byte
+                        }
+                        _ => {
+                            // RAM
+                            self.ram_write_byte(
+                                (self.bank2 & 0b11) as usize,
+                                (addr - 0xA000) as usize,
+                                byte,
+                            )
+                        }
+                    }
                 }
             }
-            _ => panic!("Unsupported MBC0 memory access (write) @{:#X}", addr),
+            _ => panic!("Unsupported MBC3 memory access (write) @{:#X}", addr),
         }
     }
 

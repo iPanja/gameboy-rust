@@ -1412,6 +1412,7 @@ impl CPU {
                     opcode
                 );
                 self.registers.pc -= 1;
+                self.is_halted = true;
                 0
             }
         };

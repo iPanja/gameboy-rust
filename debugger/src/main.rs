@@ -41,7 +41,7 @@ fn main() {
     let mut rom_buffer: Vec<u8> = Vec::new();
 
     let mut bootstrap_rom = std::fs::File::open("../roms/DMG_ROM.bin").expect("INVALID ROM");
-    let mut rom = std::fs::File::open("../roms/halt_bug.gb").expect("INVALID ROM");
+    let mut rom = std::fs::File::open("../roms/Pokemon Red.gb").expect("INVALID ROM");
     //let mut rom = std::fs::File::open("../roms/individual/02-interrupts.gb").expect("INVALID ROM");
 
     //let mut rom = std::fs::File::open("../roms/Kirby.gb").expect("INVALID ROM");
