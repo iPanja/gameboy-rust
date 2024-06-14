@@ -7,3 +7,4 @@ debugger/target/*
 roms/*
 emulator/gb-log
 emulator/gb-vram-log
+frontend/gb_save.gbr
