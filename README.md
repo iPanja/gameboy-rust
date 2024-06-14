@@ -89,7 +89,7 @@ Screen capture of main display:
 ![Super Mario Land](readme_media/SuperMarioLand.gif)
 ![Kirby's Dream Land](readme_media/KirbysDreamLand.gif)
 
-Default emulator GUI (emulator crate):
+Default emulator GUI (frontend crate):
 
 ![Game Boy GUI & Settings Tab](readme_media/Settings.png)
 
