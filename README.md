@@ -160,7 +160,7 @@ Features:
 
 - Configurable keybinds (with save/load support)
 - Loading ROMs from your file system
-- WIP color palette changer
+- Custom color palettes
 - Very rudimentary game save manager (RAM/battery)
 
 ### Debugger
