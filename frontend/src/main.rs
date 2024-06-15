@@ -262,8 +262,29 @@ impl GameBoyState {
         let display = self.gameboy.bus.ppu.get_display();
         let fixed_display = [0 as u8; 160 * 10 * 4].as_slice();
         let display_slice = display.as_slice();
-        let result = [fixed_display, display_slice].concat();
+        let mut result = [fixed_display, display_slice].concat();
+
+        self.apply_custom_palette(&mut result);
 
         frame.copy_from_slice(&result);
+    }
+
+    fn apply_custom_palette(&self, pixels: &mut Vec<u8>) {
+        let palette = &self.config.color_palette;
+
+        for pixel in pixels.chunks_mut(4) {
+            // Original pixel is [x, x, x, 255] (RGBA) as it is a shade of gray (r=b=g)
+            let new_pixel = match pixel[0] {
+                255 => &palette[0],
+                170 => &palette[1],
+                85 => &palette[2],
+                _ => &palette[3],
+            };
+
+            // Map to new palette color
+            for index in 0..3 {
+                pixel[index] = new_pixel[index];
+            }
+        }
     }
 }

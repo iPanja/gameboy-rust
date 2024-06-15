@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs::File,
-    io::{Read, Write},
+    io::{BufReader, BufWriter, Read, Write},
     path::PathBuf,
 };
 
@@ -14,6 +14,7 @@ use crate::gameboy::joypad::JoypadInputKey;
 pub struct GameBoyConfig {
     pub selected_rom: Option<PathBuf>,
     pub input_mapper: HashMap<JoypadInputKey, [Option<VirtualKeyCode>; 2]>,
+    pub color_palette: [PixelColor; 4],
 }
 
 impl Default for GameBoyConfig {
@@ -30,6 +31,12 @@ impl Default for GameBoyConfig {
                 (JoypadInputKey::Start, [Some(VirtualKeyCode::Q), None]),
                 (JoypadInputKey::Select, [Some(VirtualKeyCode::E), None]),
             ]),
+            color_palette: [
+                pc_from_gray_value(255),
+                pc_from_gray_value(170),
+                pc_from_gray_value(85),
+                pc_from_gray_value(0),
+            ],
         }
     }
 }
@@ -38,12 +45,12 @@ impl Default for GameBoyConfig {
 impl GameBoyConfig {
     /// Attempt to save the config instance to gb_config.json
     pub fn save(&self) -> Result<(), String> {
-        let mut file = File::create("gb_config.json");
-
-        match file.as_mut() {
+        let file = File::open("gb_config.json");
+        match file {
             Ok(file) => {
-                let serialized = serde_json::to_string(&self).unwrap();
-                match file.write_all(&serialized.as_bytes()) {
+                let writer: BufWriter<File> = BufWriter::new(file);
+
+                match serde_json::to_writer(writer, &self) {
                     Ok(_) => Ok(()),
                     Err(error) => Err(error.to_string()),
                 }
@@ -55,11 +62,15 @@ impl GameBoyConfig {
     /// Attempt to load config from gb_config.json.
     /// Return instance if found, otherwise the error as a string
     fn _load() -> Result<Self, String> {
-        match File::open("gb_config.json").as_mut() {
+        let file = File::open("gb_config.json");
+        match file {
             Ok(file) => {
-                let mut serialized = String::new();
-                match file.read_to_string(&mut serialized) {
-                    Ok(_) => serde_json::from_str(&serialized).unwrap(),
+                let reader: BufReader<File> = BufReader::new(file);
+
+                let result: Result<Self, serde_json::Error> = serde_json::from_reader(reader);
+
+                match result {
+                    Ok(config) => Ok(config),
                     Err(error) => Err(error.to_string()),
                 }
             }
@@ -80,4 +91,9 @@ impl GameBoyConfig {
             }
         }
     }
+}
+
+pub type PixelColor = [u8; 3];
+fn pc_from_gray_value(value: u8) -> PixelColor {
+    [value, value, value]
 }
