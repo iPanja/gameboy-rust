@@ -1,5 +1,6 @@
 use std::{fmt::Write, result};
 
+/// Get a string representation of what the current opcode does
 pub fn parse_opcode(
     opcode: u8,
     next_byte: u8,
@@ -670,28 +671,3 @@ fn parse_opcode_cb(
         Err("Unsupported instruction".to_string())
     }
 }
-/*
-fn parse_opcode_cb(b: u16) -> Result<String, String> {
-    let test: Vec<Box<dyn FnOnce(u16) -> String>> = match b {
-        0 => vec![Box::new(|b: u16| parse_as_u8(b))],
-        1 => vec![Box::new(|b: u16| parse_as_u16(b))],
-        2 => vec![Box::new(|b: u16| parse_as_i8(b))],
-        _ => vec![Box::new(|b: u16| parse_as_i16(b))],
-    };
-
-    Ok(write!(w, "".to_string())
-}
-
-fn parse_as_u8(word: u16) -> String {
-    format!(write!(w, "{:#X}",), word as u8)
-}
-fn parse_as_u16(word: u16) -> String {
-    format!(write!(w, "{:#X}",), word as u16)
-}
-fn parse_as_i8(word: u16) -> String {
-    format!(write!(w, "{:#X}",), word as i8)
-}
-fn parse_as_i16(word: u16) -> String {
-    format!(write!(w, "{:#X}",), word as i16)
-}
-*/

@@ -6,31 +6,20 @@ use std::{
 };
 
 use crate::{SCREEN_HEIGHT, SCREEN_WIDTH};
-use serde::{Deserialize, Serialize};
-//use serde::{ser::SerializeStruct, Serialize, Serializer};
-use serde_big_array::BigArray;
 
 use super::{Bus, Interrupt};
 
 const VRAM_SIZE: usize = (0x9FFF - 0x8000) + (0xFE9F - 0xFE00);
 
 const TILE_MAP_SIZE: usize = 0x3FF;
-
-#[derive(Serialize, Deserialize)]
 pub struct PPU {
     // Memory Map (entirety of VRAM) 0x8000-0x9FFF and 0xFE00-0xFE9F
-    #[serde(with = "BigArray")]
     raw_tile_vram: [u8; 384 * 16],
-    #[serde(with = "BigArray")]
-    pub tile_set: [Tile; 384], // Tile Set Blocks 0-3 - 0x8000-0x97FF
-    #[serde(with = "BigArray")]
+    pub tile_set: [Tile; 384],   // Tile Set Blocks 0-3 - 0x8000-0x97FF
     tile_map_1: [u8; 0x3FF + 1], // Background Map 1 - 0x9800 - 0x9BFF    // Each entry (byte, u8) is a tile number (tile located in tile_set)
-    #[serde(with = "BigArray")]
     tile_map_2: [u8; 0x3FF + 1], // Background Map 2 - 0x9C00 - 0x9FFF    // "                                                                "
-    #[serde(with = "BigArray")]
     pub raw_oam: [u8; 0xA0], // Object Attribute Memory - 0xFE00 - 0xFE9F // Each entry is 4 bytes, [u8; 4] - https://gbdev.io/pandocs/OAM.html#object-attribute-memory-oam
-    #[serde(with = "BigArray")]
-    pub oam: [Sprite; 40], // [[u8; 4]; 40]
+    pub oam: [Sprite; 40],   // [[u8; 4]; 40]
     // IO Registers 0xFF40-0xFF4B
     lcdc: u8,           // PPU control register - 0xFF40
     stat: u8,           // PPU status register - 0xFF41
@@ -49,7 +38,6 @@ pub struct PPU {
     window_lc: u8,
     line_scanned: bool,
     // Display
-    #[serde(with = "BigArray")]
     screen_buffer: [u8; SCREEN_WIDTH * SCREEN_HEIGHT * 4], // RGBA
 }
 
@@ -352,6 +340,8 @@ impl PPU {
     //
     //  VRAM Read/Write
     //
+
+    /// Given one (of two) raw tile set bytes, write it to memory and also cache it for easy future access
     fn write_tile_set_data(&mut self, index: usize, byte: u8) {
         self.raw_tile_vram[index] = byte;
         // A tile is 2 bytes. 1 byte will only populate half the tile, or 4 pixels
@@ -378,6 +368,7 @@ impl PPU {
         }
     }
 
+    /// Write the OAM byte into memory and also cache for easy future access
     fn write_oam_data(&mut self, index: usize, byte: u8) {
         self.raw_oam[index] = byte;
         let byte_pos = index & 0x3;
@@ -429,14 +420,17 @@ impl PPU {
     //  Display
     //
 
+    /// Is the LCD enabled (master switch for the PPU)
     pub fn is_lcd_enabled(&self) -> bool {
         !(self.lcdc & 0b1000_0000 == 0)
     }
 
+    /// Is the PPU currently diplaying the window?
     pub fn is_window_enabled(&self) -> bool {
         !(self.lcdc & 0b0010_0000 == 0)
     }
 
+    /// Is the PPU currently displaying OAM objects (sprites)?
     pub fn is_obj_enabled(&self) -> bool {
         !(self.lcdc & 0b0000_0010 == 0)
     }
@@ -459,6 +453,7 @@ impl PPU {
         &self.screen_buffer
     }
 
+    /// Copy the entire internal tile set data into the buffer supplied
     pub fn get_debug_display(&self, buffer: &mut [[Pixel; 16 * 8]; 32 * 8]) {
         let mut tile_no = 0;
 
@@ -480,6 +475,7 @@ impl PPU {
         }
     }
 
+    /// Read (copy) the tile from the tile set corresponding to the supplied tile ID
     fn copy_from_tile_set(&self, tile_id: usize) -> Tile {
         match self.get_address_mode() {
             0x8000 => self.tile_set[tile_id as usize],
@@ -487,6 +483,7 @@ impl PPU {
         }
     }
 
+    /// Borrow the tile from the tile set corresponding to the supplied tile ID
     fn borrow_from_tile_set(&self, tile_id: usize) -> &Tile {
         match self.get_address_mode() {
             0x8000 => &self.tile_set[tile_id as usize],
@@ -494,6 +491,7 @@ impl PPU {
         }
     }
 
+    /// Borrow the currently used background tile map (there are 2, determined by the LCDC register)
     fn get_background_map(&self) -> &[u8; 0x3FF + 1] {
         match self.lcdc & 0x8 {
             0 => &self.tile_map_1,
@@ -501,6 +499,7 @@ impl PPU {
         }
     }
 
+    /// Borrow the currently used window tile map (there are 2, determined by the LCDC register)
     fn get_window_map(&self) -> &[u8; 0x3FF + 1] {
         match self.lcdc & 0b100_0000 {
             0 => &self.tile_map_1,
@@ -512,8 +511,9 @@ impl PPU {
     //  Scanline Rendering
     //
 
-    // Fetch a row (SCREEN_WDITH) of pixels at the current LY + SCY
-    // Does NOT take into account the horizontal scroll register (SCX)
+    /// Fetch a row (SCREEN_WDITH) of background pixels at the current LY + SCY
+    ///
+    /// Does NOT take into account the horizontal scroll register (SCX)
     fn scanline_background(&self, row_buffer: &mut [Pixel; 32 * 8]) {
         //return;
 
@@ -550,7 +550,7 @@ impl PPU {
         }
     }
 
-    // Fetch a row (SCREEN_WDITH) of pixels at the current LY
+    /// Fetch a row (SCREEN_WDITH) of sprite pixels at the current LY
     fn scanline_sprites(&self, row_buffer: &mut [Option<(Pixel, bool)>; SCREEN_WIDTH]) {
         // Clear row buffer - ensuring we can detect empty tiles properly
         *row_buffer = [None; SCREEN_WIDTH];
@@ -583,6 +583,9 @@ impl PPU {
         }
     }
 
+    /// Draw all sprite pixel data of the current LY onto the specified row_buffer
+    ///
+    /// Should be used to draw sprite data on top of the rendered background, window
     fn draw_scanline_sprite(
         &self,
         row_buffer: &mut [Option<(Pixel, bool)>; SCREEN_WIDTH], // (Pixel, Priority)
@@ -661,6 +664,7 @@ impl PPU {
         }
     }
 
+    /// Draw all window data of the current LY onto the specified row_buffer
     fn scanline_window(&mut self, row_buffer: &mut [Option<Pixel>; SCREEN_WIDTH]) {
         *row_buffer = [None; SCREEN_WIDTH];
 
@@ -709,6 +713,7 @@ impl PPU {
         self.window_lc += 1;
     }
 
+    /// Render an entire row's worth of pixels into the internal buffer (`self.screen_buffer`)
     fn scanline_render(&mut self) {
         if self.line_scanned {
             return;
@@ -768,6 +773,10 @@ impl PPU {
         buffer[index + 3] = 0xFF;
     }
 
+    /// Cache the last 10 sprites that occur on the current row (LY) by their x-position
+    ///
+    /// These are the only sprites that will end up being rendered during the Drawing mode.
+    /// This function should be called during the OAM Scan mode.
     fn build_sprite_cache(&mut self) {
         self.scanline_sprite_cache = Vec::with_capacity(10);
         let sprite_height = self.get_sprite_height();
@@ -794,7 +803,7 @@ impl PPU {
 
         if !self.is_lcd_enabled() {
             //println!("LCD DISABLED!");
-            //return raised_interrupts;
+            return raised_interrupts;
         }
 
         self.mode_cycles += _cycles;
@@ -807,28 +816,25 @@ impl PPU {
             cycles_left -= ticks_consumed;
 
             // Process
-            //println!("consuming: {}", ticks_consumed);
 
             if self.ly < 144 {
                 // Normal
                 if self.mode_cycles < 80 {
-                    //println!("\tOAM");
                     // OAM
                     self.build_sprite_cache();
                     raised_interrupts.append(&mut self.set_mode(Mode::OAM));
                 } else if self.mode_cycles < (80 + 172) {
-                    //println!("\tline render");
-                    //println!("bg: {:#08b}", self.bg_palette);
+                    // DRAWING
                     raised_interrupts.append(&mut self.set_mode(Mode::Drawing));
                 } else if self.mode_cycles < 456 {
-                    //println!("\thblank");
+                    // HBLANK
                     if let Some(interrupt) = self.check_lyc_interrupt() {
                         raised_interrupts.push(interrupt);
                     }
 
                     raised_interrupts.append(&mut self.set_mode(Mode::HBlank));
                 } else {
-                    //println!("\t=> next line!");
+                    // VLBANK
                     if self.is_lcd_enabled() {
                         self.scanline_render();
                         self.line_scanned = false;
@@ -842,16 +848,11 @@ impl PPU {
                     self.mode_cycles = self.mode_cycles % 456;
                 }
             } else {
-                //println!("\tVBLANK");
                 // VBlank Lines
 
                 if self.mode_cycles > 456 {
                     // Increment LY
                     self.ly = (self.ly + 1) % 154;
-
-                    //if let Some(interrupt) = self.check_lyc_interrupt() {
-                    //raised_interrupts.push(interrupt);
-                    //}
 
                     if self.ly < 144 {
                         self.set_mode(Mode::OAM);
@@ -871,10 +872,10 @@ impl PPU {
         raised_interrupts
     }
 
+    /// If an LCD interrupt should occur, return it
     fn check_lyc_interrupt(&mut self) -> Option<Interrupt> {
         if self.ly == self.lyc && self.stat & 0b100_0000 != 0 {
             self.stat |= 0b100;
-            //println!("LYC interrupt @ LY=LYC={:#X}", self.lyc);
             Some(Interrupt::LCD)
         } else {
             self.stat &= !0b100;
@@ -882,6 +883,7 @@ impl PPU {
         }
     }
 
+    /// Change the color of the pixel according to the pallete specified
     fn apply_pixel_pallete(&self, pixel: Pixel, pallete: &u8) -> Pixel {
         let bits = match pixel {
             Pixel::Three => (pallete >> 6) & 0x3,
@@ -894,6 +896,9 @@ impl PPU {
         pixel
     }
 
+    /// Change the color of the pixel according to the pallete specified
+    ///
+    /// A zero pixel (0x00) turns transparent, returning None
     fn apply_pixel_pallete_sprite(&self, pixel: Pixel, pallete: &u8) -> Option<Pixel> {
         let bits = match pixel {
             Pixel::Three => (pallete >> 6) & 0x3,
@@ -906,7 +911,7 @@ impl PPU {
         Some(pixel)
     }
 
-    // Used in debugger to display OAM sprites
+    /// Used in debugger to display OAM sprites
     pub fn tile_to_vec(tile: &Tile) -> Vec<u8> {
         let mut vec: Vec<u8> = Vec::with_capacity(64 * 4);
         for row in tile {

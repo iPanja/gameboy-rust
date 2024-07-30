@@ -519,7 +519,7 @@ fn render_gameboy_registers(ui: &mut Ui, gameboy: &mut GameBoy) {
                 .default_open(true)
                 .build(ui)
             {
-                let serial_output: String = gameboy.bus.dbg.iter().collect();
+                let serial_output: String = gameboy.bus.serial_buffer.iter().collect();
                 ui.text(serial_output);
             }
 

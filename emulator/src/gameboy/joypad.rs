@@ -85,12 +85,6 @@ impl Joypad {
     pub fn write_byte(&mut self, byte: u8) {
         // Update reading mode
         self.selection_mask = (byte & 0x30) >> 4;
-
-        /*println!(
-            "joypad mode: {:?}\t({:08b})",
-            self.selection_mask,
-            byte & 0b0011_0000 >> 4
-        );*/
     }
 
     pub fn press_key(&mut self, joypad_key: JoypadInputKey) {

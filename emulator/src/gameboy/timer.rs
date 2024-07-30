@@ -72,41 +72,6 @@ impl Timer {
         self.div = 0;
     }
 
-    /*
-    pub fn __ztick(&mut self, t_cycles: f64) {
-        if t_cycles == 0.0 {
-            return;
-        }
-
-        // 1 tick @ 16384 Hz = 256 cycles (markau)
-        let clock_speed_cycles: u16 = self.get_clock_select();
-
-        self.internal_div += t_cycles as u16;
-        while self.internal_div >= clock_speed_cycles {
-            self.div = self.div.wrapping_add(1);
-            self.internal_div -= clock_speed_cycles;
-        }
-
-        // Increment TIMA, handle overflow (triggers an interrupt)
-        if self.is_timer_enabled() {
-            self.internal_tima += t_cycles as u16;
-            let clock_select = self.get_clock_select();
-
-            while self.internal_tima >= clock_select {
-                self.internal_tima -= clock_select;
-                self.tima = self.tima.wrapping_add(1);
-
-                if self.tima == 0x00 {
-                    // TIMA overflow
-                    self.raise_interrupt = Some(Interrupt::Timer);
-                    //println!("[Timer] Raising timer interrupt!");
-                    self.tima = self.tma;
-                }
-            }
-        }
-    }
-    */
-
     pub fn tick(&mut self, t_cycles: u8) {
         // Increment DIV counter
         self.internal_div += t_cycles as u16;
@@ -148,7 +113,7 @@ impl Timer {
         return self.tac & 0x4 != 0;
     }
 
-    /// Used for internal use (timer.rs)
+    /// For internal use (timer.rs)
     fn get_clock_select(&self) -> u16 {
         match self.tac & 0x3 {
             0b00 => 1024, // Frequency 4096
@@ -169,7 +134,7 @@ impl Timer {
         }
     }
 
-    /// Used for external use (gameboy.rs)
+    /// For external use (gameboy.rs)
     pub fn get_clock_freq(&self) -> f64 {
         CPU_CLOCK
             / match self.tac & 0x3 {

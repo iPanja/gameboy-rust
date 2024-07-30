@@ -1,7 +1,5 @@
 use super::{joypad::JoypadInputKey, ppu::Pixel, Bus, CartridgeHeader, CPU, PPU};
-use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
 pub struct GameBoy {
     pub cpu: CPU,
     pub bus: Box<Bus>,
@@ -15,17 +13,21 @@ impl GameBoy {
             cpu: CPU::new(),
             bus: Box::new(Bus::new()),
             cartridge_header: None,
-            //tile_map_screen: [[Pixel::Zero; 128]; 256],
         }
     }
 
     //
     // Stepping/Ticking the CPU
     //
+
+    /// Execute one tick's worth of opcodes
     pub fn tick(&mut self) {
         self.tick_bp(None);
     }
 
+    /// Execute one tick's worth of opcodes, returning early if a breakpoint is encountered
+    ///
+    /// Returns whether or not a breakpoint was hit
     pub fn tick_bp(&mut self, _breakpoints: Option<&Vec<u16>>) -> bool {
         let mut current_frame_cycles: f64 = 0f64;
 
@@ -41,26 +43,12 @@ impl GameBoy {
         return false;
     }
 
+    /// Execute a single opcode
     pub fn step(&mut self) -> u8 {
-        let _cycles: u8 = self.cpu.tick(&mut self.bus);
+        // Execute one CPU instruction
+        let _cycles: u8 = self.cpu.step(&mut self.bus);
+        // Tick appropriate components through the bus
         self.bus.tick(_cycles);
-
-        self.bus.timer.raise_interrupt = match self.bus.timer.raise_interrupt {
-            None => None,
-            Some(x) => {
-                self.bus.trigger_interrupt(x);
-                None
-            }
-        };
-
-        self.bus.joypad.read_byte();
-        self.bus.joypad.raise_interrupt = match self.bus.joypad.raise_interrupt {
-            None => None,
-            Some(x) => {
-                self.bus.trigger_interrupt(x);
-                None
-            }
-        };
 
         _cycles
     }
@@ -68,6 +56,10 @@ impl GameBoy {
     //
     // Reading in ROMs
     //
+
+    /// Load the supplied ROM's buffer
+    ///
+    /// It will parse the ROM's cartridge header and load the appropriate MBC
     pub fn read_rom(&mut self, buffer: &Vec<u8>) {
         self.cartridge_header = Some(CartridgeHeader::new(&buffer[0x0100..=0x014F]));
         // CAUSES NINTENDO LOGO TO DISAPPEAR??
@@ -81,7 +73,6 @@ impl GameBoy {
                 }
                 _ => {
                     panic!("Unsupported cartridge!\n\t{:#X}\n", c_h.cartridge_type_code);
-                    //self.bus.mbc = Box::new(super::cartridge::MBC0::new())
                 }
             }
         }
@@ -89,6 +80,7 @@ impl GameBoy {
         self.bus.ram_load_rom(buffer, 0x0);
     }
 
+    /// Load the Boot ROM into memory (0x0000-0x0100)
     pub fn read_boot_rom(&mut self, buffer: &Vec<u8>) {
         self.bus.ram_load_boot_rom(buffer);
     }
@@ -97,10 +89,12 @@ impl GameBoy {
     // Public display methods
     //
 
+    /// Copy the display buffer into the buffer supplied
     pub fn export_display(&mut self, buffer: &mut Vec<u8>) {
         *buffer = self.bus.ppu.get_display().to_vec();
     }
 
+    /// Copy the PPU's internal tile map display into the buffer specified
     pub fn export_tile_map_display(&mut self, buffer: &mut Vec<u8>) {
         // Update internal frame buffer
         let mut tile_map_screen = [[Pixel::Zero; 128]; 256];
@@ -114,15 +108,6 @@ impl GameBoy {
     // Display helper methods
     //
 
-    /*fn get_debug_display(&mut self) -> &[[Pixel; 128]; 256] {
-        //self.bus.ram.ram[0xFF44] = 0x90; //min(self.bus.ram.ram[0xFF40] + 1, 144);
-        self.bus.ram_write_byte(0xFF44, 0x90);
-        self.bus.ppu.get_debug_display(&mut self.tile_map_screen);
-
-        &self.tile_map_screen
-    }*/
-
-    //pub fn convert(&mut self, display: , buffer: &mut Vec<u8>)
     fn convert_disply_to_vec<const W: usize, const H: usize>(
         &self,
         display: &[[Pixel; W]; H],

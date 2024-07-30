@@ -2,26 +2,22 @@ use super::{
     cartridge::{MBC, MBC0},
     interrupt, Interrupt, Joypad, Memory, Timer, PPU,
 };
-use serde_big_array::BigArray;
 
 const BOOT_ROM_SIZE: u16 = 0x100;
 
-#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Bus {
     ram: Memory,
     pub ppu: PPU,
     pub timer: Timer,
-    pub dbg: Vec<char>,
+    pub serial_buffer: Vec<char>,
     pub mbc: Box<dyn MBC>,
     pub joypad: Joypad,
-    is_boot_rom_mapped: bool,
-    #[serde(with = "BigArray")]
+    is_boot_rom_mapped: bool, // Used to determine r/w to the range 0x000-0x0100
     boot_rom: [u8; BOOT_ROM_SIZE as usize],
+    // Memory specifically allocated for the Boot ROM
     dma_address_upper: u8,
-    #[serde(with = "BigArray")]
-    wram: [u8; 0x8000],
-    #[serde(with = "BigArray")]
-    hram: [u8; 0x7F],
+    wram: [u8; 0x8000], // Work RAM
+    hram: [u8; 0x7F],   // High RAM
     serial: [u8; 2],
     /// IF_REG
     interrupt_flags: u8,
@@ -34,7 +30,7 @@ impl Bus {
             ram: Memory::new(),
             ppu: PPU::new(),
             timer: Timer::new(),
-            dbg: Vec::new(),
+            serial_buffer: Vec::new(),
             mbc: Box::new(MBC0::new()),
             joypad: Joypad::new(),
             is_boot_rom_mapped: false,
@@ -157,10 +153,16 @@ impl Bus {
         self.ram_write_byte(address + 1, (word >> 8) as u8);
     }
 
+    /// Load the provided ROM into memory
+    ///
+    /// Automatically determines which MBC is required and dynamically allocates it.
     pub fn ram_load_rom(&mut self, buffer: &Vec<u8>, addr: usize) {
         self.mbc.load_rom(buffer);
     }
 
+    /// Loads the buffer into the memory starting at 0x0000
+    ///
+    /// *Should only be used to load the Boot ROM.*
     pub fn ram_load_boot_rom(&mut self, buffer: &Vec<u8>) {
         for i in 0..buffer.len() {
             self.boot_rom[i] = buffer[i];
@@ -168,22 +170,43 @@ impl Bus {
         self.is_boot_rom_mapped = true;
     }
 
+    /// Request an interrupt by writing its flag to the IF Reg in memory (0xFF0F)
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
-        //println!("Requesting interrupt: {:?}", interrupt);
         let interrupt_bit = interrupt.get_flag_mask();
         let ifr = self.ram_read_byte(0xFF0F); // IF_REG
 
         self.ram_write_byte(0xFF0F, ifr | interrupt_bit);
     }
 
+    /// Tick all appropriate components and handle their interrupts.
+    ///
+    /// Components: Timer, PPU, Joypad
     pub fn tick(&mut self, cycles: u8) {
+        // Timer
         self.timer.tick(cycles);
+        self.timer.raise_interrupt = match self.timer.raise_interrupt {
+            None => None,
+            Some(x) => {
+                self.trigger_interrupt(x);
+                None
+            }
+        };
 
+        // PPU
         let ppu_interrupts = self.ppu.tick(cycles as u16);
-
         for interrupt in ppu_interrupts {
             self.trigger_interrupt(interrupt);
         }
+
+        // Joypad
+        self.joypad.read_byte();
+        self.joypad.raise_interrupt = match self.joypad.raise_interrupt {
+            None => None,
+            Some(x) => {
+                self.trigger_interrupt(x);
+                None
+            }
+        };
     }
 
     pub fn debug(&mut self) {
@@ -191,7 +214,7 @@ impl Bus {
         if self.ram_read_byte(0xFF02) == 0x81 {
             let c_byte = self.ram_read_byte(0xFF01);
             let c = char::from(c_byte);
-            self.dbg.push(c);
+            self.serial_buffer.push(c);
             self.ram_write_byte(0xFF02, 0);
         }
     }

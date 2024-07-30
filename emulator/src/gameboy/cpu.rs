@@ -10,7 +10,6 @@ const IF_REG: u16 = 0xFF0F;
 const IE_REG: u16 = 0xFFFF;
 pub const IS_DEBUGGING: bool = false;
 
-#[derive(serde::Serialize, serde::Deserialize)]
 pub struct CPU {
     pub registers: Registers,
     pub is_halted: bool,
@@ -58,7 +57,7 @@ impl CPU {
         bus.ram_read_byte(IF_REG) & bus.ram_read_byte(IE_REG) & 0x1F != 0
     }
 
-    pub fn tick(&mut self, bus: &mut Bus) -> u8 {
+    pub fn step(&mut self, bus: &mut Bus) -> u8 {
         // Handle pending (delayed) interrupt action
         self.interrupt_action = match self.interrupt_action {
             Some(x) => {
@@ -84,7 +83,7 @@ impl CPU {
         self.log_state(bus);
         let cycles: u8 = match self.handle_interrupt(bus) {
             Some(x) => x,
-            None => self.step(bus),
+            None => self.execute_opcode(bus),
         };
 
         cycles
@@ -137,7 +136,7 @@ impl CPU {
         return None;
     }
 
-    pub fn step(&mut self, bus: &mut Bus) -> u8 {
+    pub fn execute_opcode(&mut self, bus: &mut Bus) -> u8 {
         let opcode = bus.ram_read_byte(self.registers.pc);
 
         //println!("instruction {:#X}: {:#X}", self.registers.pc, opcode);
@@ -150,7 +149,7 @@ impl CPU {
 
         let cycles: u8 = match opcode {
             // FORMAT 0x00 => { statement ; clock_cycles }
-            0xCB => self.step_cb(bus),
+            0xCB => self.execute_opcode_cb(bus),
             //
             // 8-Bit Loads
             //
@@ -1420,7 +1419,7 @@ impl CPU {
         cycles
     }
 
-    fn step_cb(&mut self, bus: &mut Bus) -> u8 {
+    fn execute_opcode_cb(&mut self, bus: &mut Bus) -> u8 {
         let opcode = bus.ram_read_byte(self.registers.pc);
         //println!("CB instruction {:#X}: {:#X}", self.registers.pc, opcode);
         self.registers.pc += 1;

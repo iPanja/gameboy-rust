@@ -8,6 +8,7 @@ pub enum Interrupt {
 }
 
 impl Interrupt {
+    /// Get the bits used in the IE, IF Reg to signify the interrupt
     pub fn get_flag_mask(&self) -> u8 {
         match self {
             Interrupt::VBlank => 0x1,
@@ -18,6 +19,7 @@ impl Interrupt {
         }
     }
 
+    /// Get the PC address of the respective interrupt handler
     pub fn get_jump_addr(&self) -> u8 {
         match self {
             Interrupt::VBlank => 0x40,
