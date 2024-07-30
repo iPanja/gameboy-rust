@@ -116,6 +116,8 @@ cargo run
 
 You can modify the default keybinds freely in the emulator crate's gui via `File > Settings`.
 
+_Non-modifiable_ keybind: Tab => toggle's the visibility of the menu bar.
+
 #### Default keybinds
 
 | Keyboard Input | Corresponding Joypad Input |

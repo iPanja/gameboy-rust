@@ -50,7 +50,7 @@ impl GameBoyConfig {
             Ok(file) => {
                 let writer: BufWriter<File> = BufWriter::new(file);
 
-                match serde_json::to_writer(writer, &self) {
+                match serde_json::to_writer(writer, self) {
                     Ok(_) => Ok(()),
                     Err(error) => Err(error.to_string()),
                 }

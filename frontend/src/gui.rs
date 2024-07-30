@@ -61,8 +61,6 @@ pub struct Gui {
     settings_tab_state: SettingsTabEnum,
     // Key Binding
     pub binding_tuple: Option<(JoypadInputKey, usize)>,
-    // Temporary Color Palette
-    temp_color_palette: [[u8; 3]; 4],
 }
 
 impl Framework {
@@ -122,7 +120,9 @@ impl Framework {
         let raw_input = self.egui_state.take_egui_input(window);
         let output = self.egui_ctx.run(raw_input, |egui_ctx| {
             // Draw the demo application.
-            self.gui.ui(egui_ctx, gameboy_state);
+            if gameboy_state.is_menu_visible {
+                self.gui.ui(egui_ctx, gameboy_state);
+            }
         });
 
         self.textures.append(output.textures_delta);
@@ -187,7 +187,6 @@ impl Gui {
             debug_window_open: false,
             binding_tuple: None,
             settings_tab_state: SettingsTabEnum::Keybinds,
-            temp_color_palette: [[255, 255, 255], [170, 170, 170], [85, 85, 85], [0, 0, 0]],
         }
     }
 
@@ -313,19 +312,7 @@ impl Gui {
                     SettingsTabEnum::ColorPalette => {
                         ui.label("Color Palette Settings");
                         ui.separator();
-                        /*
-                        for (index, pixel_color) in
-                            self.temp_color_palette.as_mut().into_iter().enumerate()
-                        {
-                            if ui.color_edit_button_srgb(pixel_color).changed() {
-                                gameboy_state.config.color_palette[index] = [
-                                    pixel_color[0] as u8,
-                                    pixel_color[1] as u8,
-                                    pixel_color[2] as u8,
-                                ];
-                                println!("Palette: {:?}", gameboy_state.config.color_palette);
-                            }
-                        }*/
+
                         for pixel_color in gameboy_state.config.color_palette.iter_mut() {
                             ui.color_edit_button_srgb(pixel_color);
                         }

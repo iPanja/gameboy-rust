@@ -35,6 +35,7 @@ const CYCLES_PER_FRAME: f64 = (4194304 / 60) as f64;
 struct GameBoyState {
     gameboy: Box<GameBoy>,
     config: GameBoyConfig,
+    is_menu_visible: bool,
 }
 
 fn main() -> Result<(), Error> {
@@ -58,11 +59,7 @@ fn main() -> Result<(), Error> {
         let window_size = window.inner_size();
         let scale_factor = window.scale_factor() as f32;
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
-        let pixels = Pixels::new(
-            SCREEN_WIDTH as u32,
-            SCREEN_HEIGHT as u32 + 10,
-            surface_texture,
-        )?;
+        let pixels = Pixels::new(SCREEN_WIDTH as u32, (SCREEN_HEIGHT) as u32, surface_texture)?;
         let framework = Framework::new(
             &event_loop,
             window_size.width,
@@ -90,6 +87,11 @@ fn main() -> Result<(), Error> {
             // Read joypad input (if not in the keybinding settings page)
             if !framework.gui.settings_window_open {
                 gameboy_state.update_joypad_state(&input);
+
+                // Toggle Menu Bar
+                if input.key_pressed(VirtualKeyCode::Tab) {
+                    gameboy_state.is_menu_visible = !gameboy_state.is_menu_visible;
+                }
             }
 
             // Update the scale factor
@@ -194,6 +196,7 @@ impl GameBoyState {
         let mut gbs = Self {
             gameboy: Box::new(GameBoy::new()),
             config: GameBoyConfig::load(),
+            is_menu_visible: true,
         };
 
         gbs.gameboy
@@ -258,15 +261,14 @@ impl GameBoyState {
     /// Draw the Gameboy state to the frame buffer.
     ///
     /// Assumes the default texture format: `wgpu::TextureFormat::Rgba8UnormSrgb`
+    /// Attempt to pad pixels at the top of the screen due to the menu bar
     fn draw(&self, frame: &mut [u8]) {
         let display = self.gameboy.bus.ppu.get_display();
-        let fixed_display = [0 as u8; 160 * 10 * 4].as_slice();
-        let display_slice = display.as_slice();
-        let mut result = [fixed_display, display_slice].concat();
+        let mut display_vec = display.to_vec();
 
-        self.apply_custom_palette(&mut result);
+        self.apply_custom_palette(&mut display_vec);
 
-        frame.copy_from_slice(&result);
+        frame.copy_from_slice(&display_vec);
     }
 
     fn apply_custom_palette(&self, pixels: &mut Vec<u8>) {
