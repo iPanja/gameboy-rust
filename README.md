@@ -163,7 +163,7 @@ Features:
 - Configurable keybinds (with save/load support)
 - Loading ROMs from your file system
 - Custom color palette
-- Very rudimentary game save manager (RAM/battery)
+- Basic game save manager (RAM/battery)
 
 ### Debugger
 
@@ -178,7 +178,7 @@ This project is still a work in progress, especially the user interfaces. They r
 ## Roadmap
 
 - Emulator
-  - [ ] Implement a save manager
+  - [x] Implement a save manager
   - [ ] Fix timer, currently runs too fast (see Super Mario Land)
   - [x] Implement the MBC(s) needed to play the Pokemon games
   - [ ] Speed changing
@@ -188,6 +188,7 @@ This project is still a work in progress, especially the user interfaces. They r
   - [ ] Implement more features in the emulator's GUI
   - [ ] Scaling display in debugger
   - [ ] Speed changing
+  - [ ] Refactor gui (e.g. create a class/new file for each settings tab)
   - [x] Custom key mapping
   - [x] Loading ROMs from file system
   - [x] Fix egui on windows machines
