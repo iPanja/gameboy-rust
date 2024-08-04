@@ -802,8 +802,7 @@ impl PPU {
         let mut raised_interrupts: Vec<Interrupt> = Vec::new();
 
         if !self.is_lcd_enabled() {
-            //println!("LCD DISABLED!");
-            return raised_interrupts;
+            //return raised_interrupts;
         }
 
         self.mode_cycles += _cycles;

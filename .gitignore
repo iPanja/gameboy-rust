@@ -9,3 +9,4 @@ emulator/gb-log
 emulator/gb-vram-log
 frontend/gb_save.gbr
 frontend/gb_config.json
+frontend/saves/*.gbr

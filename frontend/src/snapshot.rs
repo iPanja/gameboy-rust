@@ -7,15 +7,20 @@ use std::{
 
 use bincode::deserialize_from;
 use chrono::{DateTime, Utc};
+use scan_dir::ScanDir;
 use serde::Deserialize;
 
-use crate::gameboy::{cartridge::MBC, GameBoy};
+use crate::{
+    gameboy::{cartridge::MBC, GameBoy},
+    GameBoyState,
+};
 
 #[derive(serde::Serialize, serde::Deserialize)]
+/// Represents a Game Boy Save (ROM and internal RAM) **file**.
+/// This struct can create or override GameBoy instances to load/save
 pub struct GameBoyGameSave {
-    name: String,
+    pub name: String,
     path_buf: PathBuf,
-    //mbc_data: Box<dyn MBC>,
 }
 
 impl GameBoyGameSave {
@@ -46,17 +51,29 @@ impl GameBoyGameSave {
             path_buf: path_buf.clone(),
         }
     }
+
+    // Create a new save in the default location with the specified file name
+    pub fn new_by_filename(save_name: &String) -> Self {
+        let mut path = PathBuf::new();
+        path.push("saves/");
+        path.push(save_name.to_string() + ".gbr");
+
+        GameBoyGameSave::new(save_name.to_owned(), &path)
+    }
 }
 
 impl GameBoyGameSave {
     // Save the MBC (ROM and internal RAM) to disk
     pub fn save(&self, gameboy: &GameBoy) {
         let file = File::create(&self.path_buf);
-        if let Ok(file) = file {
-            let writer: BufWriter<File> = BufWriter::new(file);
+        match file {
+            Ok(file) => {
+                let writer: BufWriter<File> = BufWriter::new(file);
 
-            let mbc: &Box<dyn MBC> = &gameboy.bus.mbc;
-            bincode::serialize_into(writer, &mbc);
+                let mbc: &Box<dyn MBC> = &gameboy.bus.mbc;
+                let _ = bincode::serialize_into(writer, &mbc);
+            }
+            Err(error) => println!("{:?}", error),
         }
     }
 
@@ -75,13 +92,35 @@ impl GameBoyGameSave {
             }
         }
     }
+
+    // Scans the save directory (./saves/* */) and returns all save files found
+    pub fn scan() -> Vec<GameBoyGameSave> {
+        let mut saves = Vec::new();
+
+        let files: Vec<_> = ScanDir::files()
+            .read("./saves", |iter| {
+                iter.filter(|&(_, ref name)| name.ends_with(".gbr"))
+                    .map(|(entry, _)| entry.path())
+                    .collect()
+            })
+            .unwrap();
+
+        for file in files {
+            saves.push(GameBoyGameSave::new(
+                file.to_str().unwrap_or("unknown").to_owned(),
+                &file,
+            ));
+        }
+
+        saves
+    }
 }
 
 impl Default for GameBoyGameSave {
     fn default() -> Self {
         GameBoyGameSave {
             name: "Default Save".to_owned(),
-            path_buf: PathBuf::from("gb_save.gbr"),
+            path_buf: PathBuf::from("saves/gb_save.gbr"),
         }
     }
 }

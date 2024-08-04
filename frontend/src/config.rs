@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::File,
+    fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, Write},
     path::PathBuf,
 };
@@ -45,13 +45,23 @@ impl Default for GameBoyConfig {
 impl GameBoyConfig {
     /// Attempt to save the config instance to gb_config.json
     pub fn save(&self) -> Result<(), String> {
-        let file = File::open("gb_config.json");
+        //let file = File::open("gb_config.json");
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open("gb_config.json");
+
         match file {
             Ok(file) => {
                 let writer: BufWriter<File> = BufWriter::new(file);
 
-                match serde_json::to_writer(writer, self) {
-                    Ok(_) => Ok(()),
+                let content = self.clone();
+                match serde_json::to_writer(writer, &content) {
+                    Ok(_) => {
+                        println!("WAHHHH");
+                        Ok(())
+                    }
                     Err(error) => Err(error.to_string()),
                 }
             }

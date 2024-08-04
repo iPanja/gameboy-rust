@@ -5,6 +5,7 @@ use emulator::gameboy::joypad::JoypadInputKey;
 use pixels::{wgpu, PixelsContext};
 use rfd::FileDialog;
 use std::fmt;
+use std::path::PathBuf;
 use std::slice::Iter;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
@@ -61,6 +62,10 @@ pub struct Gui {
     settings_tab_state: SettingsTabEnum,
     // Key Binding
     pub binding_tuple: Option<(JoypadInputKey, usize)>,
+    // Cached list of saves
+    saves: Vec<GameBoyGameSave>,
+    is_naming_save: bool,
+    save_name: String,
 }
 
 impl Framework {
@@ -187,6 +192,9 @@ impl Gui {
             debug_window_open: false,
             binding_tuple: None,
             settings_tab_state: SettingsTabEnum::Keybinds,
+            saves: GameBoyGameSave::scan(),
+            is_naming_save: false,
+            save_name: String::new(),
         }
     }
 
@@ -319,35 +327,74 @@ impl Gui {
                     }
                     SettingsTabEnum::SaveStates => {
                         ui.horizontal(|ui| {
-                            ui.label("Save Manager");
-                            ui.separator();
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label("Save Manager");
+                                    ui.separator();
 
-                            // Save current state
-                            if ui.button("Save State").clicked() {
-                                GameBoyGameSave::default().save(&gameboy_state.gameboy);
-                            }
+                                    // Save current state
+                                    // opens text input gui
+                                    if ui.button("Save State...").clicked() {
+                                        self.is_naming_save = !self.is_naming_save;
+                                    }
 
-                            // Load (default/last) state
-                            if ui.button("Load State...").clicked() {
-                                GameBoyGameSave::default().load(&mut gameboy_state.gameboy);
-                            }
+                                    // Load (default/last) state
+                                    if ui.button("Load State...").clicked() {
+                                        GameBoyGameSave::default().load(&mut gameboy_state.gameboy);
+                                    }
+
+                                    // Scan for saves
+                                    if ui.button("Scan").clicked() {
+                                        self.saves = GameBoyGameSave::scan();
+                                    }
+                                });
+
+                                // Naming a new save file
+                                if self.is_naming_save {
+                                    ui.horizontal(|ui| {
+                                        ui.label("Name: ");
+                                        ui.text_edit_singleline(&mut self.save_name);
+                                        if ui.button("Save!").clicked() {
+                                            // Create GameBoyGameSave instance and save it
+                                            let save =
+                                                GameBoyGameSave::new_by_filename(&self.save_name);
+                                            save.save(&gameboy_state.gameboy);
+
+                                            // Reset UI data
+                                            self.is_naming_save = false;
+                                            self.save_name = String::new();
+                                            self.saves = GameBoyGameSave::scan();
+                                        }
+                                    });
+                                }
+                            });
                         });
+                        // Display list of all save files found in './saves/'
                         ui.separator();
                         ui.label("Recent saves:");
                         egui::Grid::new("keybind_grid").show(ui, |ui| {
                             // Saves
-                            ui.horizontal(|ui| {
-                                ui.button("▶");
-                                ui.label("Save 1 - 6/6/2024 9:04PM");
-                            });
+                            for save in &self.saves {
+                                ui.horizontal(|ui| {
+                                    if ui.button("▶").clicked() {
+                                        save.load(&mut gameboy_state.gameboy);
+                                    }
+                                    ui.label(&save.name);
+                                });
+                                ui.end_row();
+                            }
                         });
                     }
                 }
 
+                // Save current config to 'gb_config.json'
                 ui.separator();
                 ui.horizontal(|ui| {
                     if ui.button("Save Config").clicked() {
-                        gameboy_state.config.save();
+                        if let Err(e) = gameboy_state.config.save() {
+                            println!("error! {e}");
+                            panic!();
+                        };
                     }
                 });
             });

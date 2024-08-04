@@ -1,4 +1,5 @@
 const RAM_SIZE: usize = 65536;
+//const RAM_SIZE: usize =
 
 use serde_big_array::BigArray;
 
@@ -16,10 +17,12 @@ impl Memory {
     }
 
     pub fn read_byte(&self, address: u16) -> u8 {
+        //println!("r: {address}");
         self.ram[address as usize]
     }
 
     pub fn write_byte(&mut self, address: u16, byte: u8) {
+        //println!("w: {address}");
         self.ram[address as usize] = byte;
     }
 
