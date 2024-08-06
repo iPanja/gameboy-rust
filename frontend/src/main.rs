@@ -36,6 +36,7 @@ struct GameBoyState {
     gameboy: Box<GameBoy>,
     config: GameBoyConfig,
     is_menu_visible: bool,
+    speed_modifier: f64,
 }
 
 fn main() -> Result<(), Error> {
@@ -197,6 +198,7 @@ impl GameBoyState {
             gameboy: Box::new(GameBoy::new()),
             config: GameBoyConfig::load(),
             is_menu_visible: true,
+            speed_modifier: 1.0,
         };
 
         gbs.gameboy
@@ -239,11 +241,12 @@ impl GameBoyState {
     /// Update the Gameboy internal state; process a frame worth of cycles
     fn update(&mut self) {
         let mut cycles: f64 = 0.0;
-        while cycles < CYCLES_PER_FRAME {
+        while cycles < CYCLES_PER_FRAME * self.speed_modifier {
             cycles += self.gameboy.step() as f64;
         }
     }
 
+    /// Read the current state of each input/joypad key and update the gameboy's state accordingly
     fn update_joypad_state(&mut self, input: &WinitInputHelper) {
         for (joypad_key, keyboard_codes) in self.config.input_mapper.iter() {
             for keyboard_code in keyboard_codes.iter() {

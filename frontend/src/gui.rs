@@ -202,6 +202,7 @@ impl Gui {
     fn ui(&mut self, ctx: &Context, gameboy_state: &mut GameBoyState) {
         egui::TopBottomPanel::top("menubar_container").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
+                // File
                 ui.menu_button("File", |ui| {
                     if ui.button("About...").clicked() {
                         self.about_window_open = true;
@@ -230,6 +231,21 @@ impl Gui {
                     }
                 });
 
+                // Speed
+                ui.menu_button("Speed", |ui| {
+                    for speed in [0.25, 0.5, 0.75, 1.0] {
+                        let label = match speed == gameboy_state.speed_modifier {
+                            true => format!("[{:?}x]", speed),
+                            false => format!("{:?}x", speed),
+                        };
+
+                        if ui.button(label).clicked() {
+                            gameboy_state.speed_modifier = speed;
+                        }
+                    }
+                });
+
+                // Debug
                 ui.menu_button("Debug", |ui| {
                     if ui.button("Show debug window").clicked() {
                         self.debug_window_open = true;
