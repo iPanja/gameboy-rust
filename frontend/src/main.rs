@@ -80,7 +80,10 @@ fn main() -> Result<(), Error> {
         // Handle input events
         if input.update(&event) {
             // Close events
-            if input.key_pressed(VirtualKeyCode::Escape) || input.close_requested() {
+            if
+            /*input.key_pressed(VirtualKeyCode::Escape) ||*/
+            input.close_requested() {
+                gameboy_state.auto_save();
                 *control_flow = ControlFlow::Exit;
                 return;
             }
@@ -104,6 +107,7 @@ fn main() -> Result<(), Error> {
             if let Some(size) = input.window_resized() {
                 if let Err(err) = pixels.resize_surface(size.width, size.height) {
                     log_error("pixels.resize_surface", err);
+                    gameboy_state.auto_save();
                     *control_flow = ControlFlow::Exit;
                     return;
                 }
@@ -166,6 +170,7 @@ fn main() -> Result<(), Error> {
 
                 // Basic error handling
                 if let Err(err) = render_result {
+                    gameboy_state.auto_save();
                     log_error("pixels.render", err);
                     *control_flow = ControlFlow::Exit;
                 }
@@ -291,5 +296,11 @@ impl GameBoyState {
                 pixel[index] = new_pixel[index];
             }
         }
+    }
+
+    /// Auto save to default name
+    fn auto_save(&self) {
+        let default_save = snapshot::GameBoyGameSave::new_by_filename(&format!("auto_save"));
+        default_save.save(&self.gameboy);
     }
 }

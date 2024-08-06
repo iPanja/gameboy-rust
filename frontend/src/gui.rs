@@ -372,8 +372,14 @@ impl Gui {
                                         ui.text_edit_singleline(&mut self.save_name);
                                         if ui.button("Save!").clicked() {
                                             // Create GameBoyGameSave instance and save it
-                                            let save =
-                                                GameBoyGameSave::new_by_filename(&self.save_name);
+                                            if self.save_name.is_empty() {}
+                                            let save = match self.save_name.is_empty() {
+                                                true => GameBoyGameSave::default(),
+                                                false => GameBoyGameSave::new_by_filename(
+                                                    &self.save_name,
+                                                ),
+                                            };
+
                                             save.save(&gameboy_state.gameboy);
 
                                             // Reset UI data

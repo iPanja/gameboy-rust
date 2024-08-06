@@ -181,17 +181,18 @@ This project is still a work in progress, especially the user interfaces. They r
   - [x] Implement a save manager
   - [ ] Fix timer, currently runs too fast (see Super Mario Land)
   - [x] Implement the MBC(s) needed to play the Pokemon games
-  - [ ] Speed changing
   - [ ] Pixel FIFO
   - [ ] Debug Kirby 2 and Donkey Kong (likely STOP or MBC1 + RAM related)
+  - [ ] Make the entire emulator serializable (to allow snapshots and auto-saving)
 - User Interface
   - [ ] Implement more features in the emulator's GUI
   - [ ] Scaling display in debugger
-  - [ ] Speed changing
   - [ ] Refactor gui (e.g. create a class/new file for each settings tab)
+  - [x] Speed changing
   - [x] Custom key mapping
   - [x] Loading ROMs from file system
   - [x] Fix egui on windows machines
+  - [x] MBC auto-save
 
 See the [open issues](https://github.com/iPanja/gameboy-rust/issues) for a full list of proposed features (and known issues).
 
